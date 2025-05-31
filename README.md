@@ -38,13 +38,13 @@ model.train()
 output_train = model(dummy_input)
 print(f"Output shape (training): {output_train.shape}")
 
-# model.set_attributes(training=False)
+# Return a forward pass in evaluation mode
 model.eval()
 # model.set_attributes(training=False)
 output_eval = model(dummy_input)
-print(f"Output shape (training): {output_eval.shape}")
+print(f"Output shape (evaluation): {output_eval.shape}")
 ```
-```bash
+```python
 Output shape (training):   (1, 1000)
 Output shape (evaluation): (1, 1000)
 ```
