@@ -1,0 +1,19 @@
+[project]
+name = "jaxvision"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "albumentations>=2.0.8",
+    "flax[all]>=0.10.6",
+    "jax>=0.6.1",
+    "opencv-python>=4.11.0.86",
+    "optax>=0.2.4",
+    "orbax>=0.1.9",
+    "polars>=1.30.0",
+    "ruff>=0.11.11",
+    "timm>=1.0.15",
+    "torchvision>=0.22.0",
+    "tqdm>=4.67.1",
+]

@@ -1,0 +1,221 @@
+from functools import partial
+from typing import Any, Tuple, List
+from flax import nnx
+import jax.numpy as jnp
+from jax import Array
+
+
+class _DenseLayer(nnx.Module):
+    def __init__(
+        self,
+        num_input_features: int,
+        growth_rate: int,
+        bn_size: int,
+        drop_rate: float,
+        *,
+        rngs: nnx.Rngs,
+    ) -> None:
+        super().__init__()
+        self.norm1 = nnx.BatchNorm(num_input_features, rngs=rngs)
+        self.conv1 = nnx.Conv(
+            num_input_features,
+            bn_size * growth_rate,
+            kernel_size=(1, 1),
+            strides=(1, 1),
+            padding="SAME",
+            use_bias=False,
+            rngs=rngs,
+        )
+
+        self.norm2 = nnx.BatchNorm(bn_size * growth_rate, rngs=rngs)
+        self.conv2 = nnx.Conv(
+            bn_size * growth_rate,
+            growth_rate,
+            kernel_size=(3, 3),
+            strides=(1, 1),
+            padding="SAME",
+            use_bias=False,
+            rngs=rngs,
+        )
+
+        self.drop_rate = float(drop_rate)
+        self.dropout = nnx.Dropout(rate=self.drop_rate, rngs=rngs)
+
+    def bn_function(self, inputs: List[Array]) -> Array:
+        concated_features = jnp.concat(inputs, axis=3)
+        bottleneck_output = self.conv1(nnx.relu(self.norm1(concated_features)))
+        return bottleneck_output
+
+    def __call__(self, input: Array) -> Array:
+        if isinstance(input, Array):
+            prev_features = [input]
+        else:
+            prev_features = input
+
+        bottleneck_output = self.bn_function(prev_features)
+
+        new_features = self.conv2(nnx.relu(self.norm2(bottleneck_output)))
+        if self.drop_rate > 0:
+            new_features = self.dropout(new_features)
+
+        return new_features
+
+
+class _DenseBlock(nnx.Module):
+    _version = 2
+
+    def __init__(
+        self,
+        num_layers: int,
+        num_input_features: int,
+        bn_size: int,
+        growth_rate: int,
+        drop_rate: float,
+        *,
+        rngs: nnx.Rngs,
+    ) -> None:
+        super().__init__()
+        layers: List[nnx.Module] = []
+        for i in range(num_layers):
+            layers.append(
+                _DenseLayer(
+                    num_input_features + i * growth_rate,
+                    growth_rate=growth_rate,
+                    bn_size=bn_size,
+                    drop_rate=drop_rate,
+                    rngs=rngs,
+                )
+            )
+        self.layers = layers
+
+    def __call__(self, init_features: Array) -> Array:
+        features = [init_features]
+        for layer in self.layers:
+            new_features = layer(jnp.concat(features, axis=-1))
+            features.append(new_features)
+        return jnp.concat(features, axis=-1)
+
+
+class _Transition(nnx.Sequential):
+    def __init__(
+        self, num_input_features: int, num_output_features: int, *, rngs: nnx.Rngs
+    ) -> None:
+        layers = [
+            nnx.BatchNorm(num_input_features, rngs=rngs),
+            nnx.relu,
+            nnx.Conv(
+                num_input_features,
+                num_output_features,
+                kernel_size=(1, 1),
+                strides=(1, 1),
+                use_bias=False,
+                rngs=rngs,
+            ),
+            partial(nnx.avg_pool, window_shape=(2, 2), strides=(2, 2)),
+        ]
+        super().__init__(*layers)
+
+
+class DenseNet(nnx.Module):
+    r"""Densenet-BC model class, based on
+    `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_.
+
+    Args:
+        growth_rate (int) - how many filters to add each layer (`k` in paper)
+        block_config (list of 4 ints) - how many layers in each pooling block
+        num_init_features (int) - the number of filters to learn in the first convolution layer
+        bn_size (int) - multiplicative factor for number of bottle neck layers
+          (i.e. bn_size * k features in the bottleneck layer)
+        drop_rate (float) - dropout rate after each dense layer
+        num_classes (int) - number of classification classes
+    """
+
+    def __init__(
+        self,
+        growth_rate: int = 32,
+        block_config: Tuple[int, int, int, int] = (6, 12, 24, 16),
+        num_init_features: int = 64,
+        bn_size: int = 4,
+        drop_rate: float = 0,
+        num_classes: int = 1000,
+        *,
+        rngs: nnx.Rngs,
+    ) -> None:
+        super().__init__()
+
+        features = [
+            nnx.Conv(
+                3,
+                num_init_features,
+                kernel_size=(7, 7),
+                strides=(2, 2),
+                padding="SAME",
+                use_bias=False,
+                rngs=rngs,
+            ),
+            nnx.BatchNorm(num_init_features, rngs=rngs),
+            nnx.relu,
+            partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"),
+        ]
+
+        # Each denseblock
+        num_features = num_init_features
+        for i, num_layers in enumerate(block_config):
+            block = _DenseBlock(
+                num_layers=num_layers,
+                num_input_features=num_features,
+                bn_size=bn_size,
+                growth_rate=growth_rate,
+                drop_rate=drop_rate,
+                rngs=rngs,
+            )
+            features.append(block)
+            num_features = num_features + num_layers * growth_rate
+            if i != len(block_config) - 1:
+                trans = _Transition(
+                    num_input_features=num_features,
+                    num_output_features=num_features // 2,
+                    rngs=rngs,
+                )
+                features.append(trans)
+                num_features = num_features // 2
+        features.append(nnx.BatchNorm(num_features, rngs=rngs))
+
+        self.features = nnx.Sequential(*features)
+
+        self.classifier = nnx.Linear(num_features, num_classes, rngs=rngs)
+
+    def __call__(self, x: Array) -> Array:
+        features = self.features(x)
+        out = nnx.relu(features)
+        out = jnp.mean(out, axis=(1, 2))
+        out = self.classifier(out)
+        return out
+
+
+def _densenet(
+    growth_rate: int,
+    block_config: Tuple[int, int, int, int],
+    num_init_features: int,
+    *,
+    rngs: nnx.Rngs,
+    **kwargs: Any,
+) -> DenseNet:
+    model = DenseNet(growth_rate, block_config, num_init_features, rngs=rngs, **kwargs)
+    return model
+
+
+def densenet121(*, rngs: nnx.Rngs, **kwargs: Any) -> DenseNet:
+    return _densenet(32, (6, 12, 24, 16), 64, rngs=rngs, **kwargs)
+
+
+def densenet161(*, rngs: nnx.Rngs, **kwargs: Any) -> DenseNet:
+    return _densenet(48, (6, 12, 36, 24), 96, rngs=rngs, **kwargs)
+
+
+def densenet169(*, rngs: nnx.Rngs, **kwargs) -> DenseNet:
+    return _densenet(32, (6, 12, 32, 32), 64, rngs=rngs, **kwargs)
+
+
+def densenet201(*, rngs: nnx.Rngs, **kwargs) -> DenseNet:
+    return _densenet(32, (6, 12, 48, 32), 64, rngs=rngs, **kwargs)
