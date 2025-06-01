@@ -21,12 +21,12 @@ from models.resnet import resnet18
 # Configuration
 params = {
     "num_epochs": 5,
-    "batch_size": 32,
+    "batch_size": 64,
     "target_size": 224,
     "learning_rate": 5e-4,
     "weight_decay": 1e-4,
     "seed": 42,
-    "num_workers": 0,
+    "num_workers": 2,
     "num_classes": 6,
     "train_data_path": "./MpoxData/train",
     "val_data_path": "./MpoxData/validation",
@@ -85,13 +85,14 @@ def create_transforms(target_size, is_training=True):
     return A.Compose(transforms_list)
 
 
-def transform_wrapper(transforms):
-    """Wrapper function for albumentations transforms"""
+class ImageTransforms:
+    """Wrapper for albumentations transforms"""
 
-    def apply_transform(image):
-        return transforms(image=image)["image"]
+    def __init__(self, transforms: A.Compose):
+        self.transforms = transforms
 
-    return apply_transform
+    def __call__(self, image: np.ndarray) -> np.ndarray:
+        return self.transforms(image=image)["image"]
 
 
 def create_datasets(params):
@@ -101,13 +102,13 @@ def create_datasets(params):
 
     train_dataset = torchvision.datasets.ImageFolder(
         params["train_data_path"],
-        transform=transform_wrapper(train_transforms),
+        transform=ImageTransforms(train_transforms),
         loader=load_image,
     )
 
     val_dataset = torchvision.datasets.ImageFolder(
         params["val_data_path"],
-        transform=transform_wrapper(val_transforms),
+        transform=ImageTransforms(val_transforms),
         loader=load_image,
     )
 
@@ -198,7 +199,7 @@ def train_epoch(model, optimizer, metrics, train_loader, epoch_num):
     result = metrics.compute()
     metrics.reset()
 
-    print(f"✅ Train Loss: {result['loss']:.4f}, Acc: {result['accuracy'] * 100:.4f}%")
+    print(f"✅ Train Loss: {result['loss']:.4f}, Acc: {result['accuracy'] * 100:.6f}%")
     return result
 
 
@@ -211,7 +212,7 @@ def validate_epoch(model, metrics, val_loader, epoch_num):
     result = metrics.compute()
     metrics.reset()
 
-    print(f"📊 Val Loss: {result['loss']:.4f}, Acc: {result['accuracy'] * 100:.4f}%")
+    print(f"📊 Val Loss: {result['loss']:.4f}, Acc: {result['accuracy'] * 100:.6f}%")
     return result
 
 
@@ -235,7 +236,7 @@ def save_best_model_if_improved(model, val_result, best_acc, epoch_num, checkpoi
             "state",
         )
         save_model(model, checkpoint_path)
-        print(f"🎉 New best model saved with accuracy: {current_acc * 100:.4f}%")
+        print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
         return current_acc
 
     return best_acc
