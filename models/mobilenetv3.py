@@ -1,115 +1,11 @@
 from functools import partial
-from typing import Any, Callable, List, Optional, Sequence, Union, Tuple
+from typing import Any, Callable, List, Optional, Sequence
 
 import jax.numpy as jnp
 from jax import Array
 from flax import nnx
-
-
-def _make_divisible(v: float, divisor: int, min_value: Optional[int] = None) -> int:
-    """
-    This function is taken from the original tf repo.
-    It ensures that all layers have a channel number that is divisible by 8
-    It can be seen here:
-    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
-    """
-    if min_value is None:
-        min_value = divisor
-    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
-    # Make sure that round down does not go down by more than 10%.
-    if new_v < 0.9 * v:
-        new_v += divisor
-    return new_v
-
-
-class Conv2dNormActivation(nnx.Sequential):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels,
-        kernel_size: int = 3,
-        stride: int = 1,
-        padding: Optional[Union[int, Tuple[int, int], str]] = None,
-        groups: int = 1,
-        norm_layer: Optional[Callable[..., nnx.Module]] = nnx.BatchNorm,
-        activation_layer: Optional[Callable[..., nnx.Module]] = nnx.relu,
-        dilation: Union[int, Tuple[int, ...]] = 1,
-        bias: Optional[bool] = None,
-        conv_layer: Callable[..., nnx.Module] = nnx.Conv,
-        *,
-        rngs: nnx.Rngs,
-    ) -> None:
-        super().__init__()
-        if padding is None:
-            padding = "SAME"
-        if bias is None:
-            bias = norm_layer is None
-
-        layers = [
-            conv_layer(
-                in_channels,
-                out_channels,
-                kernel_size=(kernel_size, kernel_size),
-                strides=(stride, stride),
-                padding=padding,
-                kernel_dilation=dilation,
-                feature_group_count=groups,
-                use_bias=bias,
-                rngs=rngs,
-            )
-        ]
-
-        if norm_layer is not None:
-            layers.append(norm_layer(out_channels, rngs=rngs))
-
-        if activation_layer is not None:
-            layers.append(activation_layer)
-
-        self.out_channels = out_channels
-        super().__init__(*layers)
-
-
-class SqueezeExtraction(nnx.Module):
-    """
-    This block implements the Squeeze-and-Excitation block from https://arxiv.org/abs/1709.01507 (see Fig. 1).
-    Parameters ``activation``, and ``scale_activation`` correspond to ``delta`` and ``sigma`` in eq. 3.
-
-    Args:
-        input_channels (int): Number of channels in the input image
-        squeeze_channels (int): Number of squeeze channels
-        activation (Callable[..., torch.nn.Module], optional): ``delta`` activation. Default: ``torch.nn.ReLU``
-        scale_activation (Callable[..., torch.nn.Module]): ``sigma`` activation. Default: ``torch.nn.Sigmoid``
-    """
-
-    def __init__(
-        self,
-        input_channels: int,
-        squeeze_channels: int,
-        activation: Callable[..., nnx.Module] = nnx.relu,
-        scale_activation: Callable[..., nnx.Module] = nnx.sigmoid,
-        *,
-        rngs: nnx.Rngs,
-    ) -> None:
-        super().__init__()
-        self.fc1 = nnx.Conv(
-            input_channels, squeeze_channels, kernel_size=(1, 1), rngs=rngs
-        )
-        self.fc2 = nnx.Conv(
-            squeeze_channels, input_channels, kernel_size=(1, 1), rngs=rngs
-        )
-        self.activation = activation
-        self.scale_activation = scale_activation
-
-    def _scale(self, input: Array) -> Array:
-        scale = jnp.mean(input, axis=(1, 2), keepdims=True)
-        scale = self.fc1(scale)
-        scale = self.activation(scale)
-        scale = self.fc2(scale)
-        return self.scale_activation(scale)
-
-    def __call__(self, input: Array) -> Array:
-        scale = self._scale(input)
-        return scale * input
+from ..ops.misc import Conv2dNormActivation, SqueezeExtraction as SElayer
+from ._utils import _make_divisible
 
 
 class InvertedResidualConfig:
@@ -147,7 +43,7 @@ class InvertResidual(nnx.Module):
         cnf: InvertedResidualConfig,
         norm_layer: Callable[..., nnx.Module],
         se_layer: Callable[..., nnx.Module] = partial(
-            SqueezeExtraction, scale_activation=nnx.hard_sigmoid
+            SElayer, scale_activation=nnx.hard_sigmoid
         ),
         *,
         rngs: nnx.Rngs,
@@ -307,11 +203,12 @@ class MobileNetV3(nnx.Module):
         )
 
     def __call__(self, x: Array) -> Array:
-        x=self.features(x)
-        x=jnp.mean(x,axis=(1,2))
-        x=self.classifier(x)
+        x = self.features(x)
+        x = jnp.mean(x, axis=(1, 2))
+        x = self.classifier(x)
 
         return x
+
 
 def _mobilenet_v3_conf(
     arch: str,

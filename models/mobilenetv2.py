@@ -1,70 +1,9 @@
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional
 import jax.numpy as jnp
 from jax import Array
 from flax import nnx
-
-
-def _make_divisible(v: float, divisor: int, min_value: Optional[int] = None) -> int:
-    """
-    This function is taken from the original tf repo.
-    It ensures that all layers have a channel number that is divisible by 8
-    It can be seen here:
-    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
-    """
-    if min_value is None:
-        min_value = divisor
-    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
-    # Make sure that round down does not go down by more than 10%.
-    if new_v < 0.9 * v:
-        new_v += divisor
-    return new_v
-
-
-class Conv2dNormActivation(nnx.Sequential):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels,
-        kernel_size: int = 3,
-        stride: int = 1,
-        padding: Optional[Union[int, Tuple[int, int], str]] = None,
-        groups: int = 1,
-        norm_layer: Optional[Callable[..., nnx.Module]] = nnx.BatchNorm,
-        activation_layer: Optional[Callable[..., nnx.Module]] = nnx.relu,
-        dilation: Union[int, Tuple[int, ...]] = 1,
-        bias: Optional[bool] = None,
-        conv_layer: Callable[..., nnx.Module] = nnx.Conv,
-        *,
-        rngs: nnx.Rngs,
-    ) -> None:
-        super().__init__()
-        if padding is None:
-            padding = "SAME"
-        if bias is None:
-            bias = norm_layer is None
-
-        layers = [
-            conv_layer(
-                in_channels,
-                out_channels,
-                kernel_size=(kernel_size, kernel_size),
-                strides=(stride, stride),
-                padding=padding,
-                kernel_dilation=dilation,
-                feature_group_count=groups,
-                use_bias=bias,
-                rngs=rngs,
-            )
-        ]
-
-        if norm_layer is not None:
-            layers.append(norm_layer(out_channels, rngs=rngs))
-
-        if activation_layer is not None:
-            layers.append(activation_layer)
-
-        self.out_channels = out_channels
-        super().__init__(*layers)
+from ..ops.misc import Conv2dNormActivation
+from ._utils import _make_divisible
 
 
 class InvertedResidual(nnx.Module):
