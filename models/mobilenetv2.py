@@ -2,7 +2,7 @@ from typing import Callable, List, Optional
 import jax.numpy as jnp
 from jax import Array
 from flax import nnx
-from ..ops.misc import Conv2dNormActivation
+from ops.misc import Conv2dNormActivation
 from ._utils import _make_divisible
 
 

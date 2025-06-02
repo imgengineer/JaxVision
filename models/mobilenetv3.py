@@ -4,7 +4,7 @@ from typing import Any, Callable, List, Optional, Sequence
 import jax.numpy as jnp
 from jax import Array
 from flax import nnx
-from ..ops.misc import Conv2dNormActivation, SqueezeExtraction as SElayer
+from ops.misc import Conv2dNormActivation, SqueezeExtraction as SElayer
 from ._utils import _make_divisible
 
 
