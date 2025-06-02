@@ -1,5 +1,5 @@
 from flax import nnx
-from typing import Optional, Union, Tuple, Callable
+from typing import Optional, Union, Tuple, Callable, List
 from jax import Array
 import jax.numpy as jnp
 
@@ -92,3 +92,43 @@ class SqueezeExtraction(nnx.Module):
     def __call__(self, input: Array) -> Array:
         scale = self._scale(input)
         return scale * input
+
+
+class MLP(nnx.Sequential):
+    """This block implements the multi-layer perceptron (MLP) module.
+
+    Args:
+        in_channels (int): Number of channels of the input
+        hidden_channels (List[int]): List of the hidden channel dimensions
+        norm_layer (Callable[..., torch.nn.Module], optional): Norm layer that will be stacked on top of the linear layer. If ``None`` this layer won't be used. Default: ``None``
+        activation_layer (Callable[..., torch.nn.Module], optional): Activation function which will be stacked on top of the normalization layer (if not None), otherwise on top of the linear layer. If ``None`` this layer won't be used. Default: ``torch.nn.ReLU``
+        inplace (bool, optional): Parameter for the activation layer, which can optionally do the operation in-place.
+            Default is ``None``, which uses the respective default values of the ``activation_layer`` and Dropout layer.
+        bias (bool): Whether to use bias in the linear layer. Default ``True``
+        drop
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        hidden_channels: List[int],
+        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        activation_layer: Optional[Callable[..., nnx.Module]] = nnx.relu,
+        bias: bool = False,
+        dropout: float = 0.0,
+        *,
+        rngs: nnx.Rngs,
+    ):
+        layers = []
+        in_dim = in_channels
+        for hidden_dim in hidden_channels[:-1]:
+            layers.append(nnx.Linear(in_dim, hidden_dim, use_bias=bias, rngs=rngs))
+            if norm_layer is not None:
+                layers.append(norm_layer(hidden_dim, rngs=rngs))
+            layers.append(activation_layer)
+            layers.append(nnx.Dropout(rate=dropout, rngs=rngs))
+            in_dim = hidden_dim
+        layers.append(nnx.Linear(in_dim, hidden_channels[-1], use_bias=bias, rngs=rngs))
+        layers.append(nnx.Dropout(rate=dropout, rngs=rngs))
+
+        super().__init__(*layers)

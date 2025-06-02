@@ -44,8 +44,7 @@ def stochastic_depth(
     # jax.random.bernoulli(key, p) generates True with probability p.
     # Here, we want to 'keep' with probability `survival_rate`.
     # The mask will be True for kept elements, False for dropped elements.
-    key = rngs.dropout()
-    noise_mask = jax.random.bernoulli(key, p=survival_rate, shape=size)
+    noise_mask = jax.random.bernoulli(rngs.params(), p=survival_rate, shape=size)
 
     if survival_rate > 0.0:
         # Convert boolean mask to float (True=1.0, False=0.0) and scale
