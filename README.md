@@ -24,7 +24,7 @@ from models.resnet import resnet50
 
 # Initialize Rngs for model parameter and dropout
 rngs = nnx.Rngs(0)
-key = rngs.dropout()
+key = rngs.params()
 
 # Instantiate the model
 model = resnet50(rngs=rngs, num_classes=1000)
