@@ -69,8 +69,8 @@ def create_transforms(target_size, is_training=True):
                     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.8
                 ),
                 A.HorizontalFlip(p=0.5),
-                A.VerticalFlip(p=0.3),
-                A.Rotate(limit=15, p=0.5),
+                A.VerticalFlip(p=0.5),
+                A.Rotate(limit=30, p=0.5),
             ]
         )
 
