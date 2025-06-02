@@ -42,7 +42,7 @@ class InvertedResidual(nnx.Module):
                     inp,
                     kernel_size=(3, 3),
                     stride=self.stride,
-                    padding="SAME",
+                    padding=(1,1),
                     rngs=rngs,
                 ),
                 nnx.BatchNorm(inp, rngs=rngs),
@@ -193,19 +193,16 @@ class ShuffleNetV2(nnx.Module):
 
         self.fc = nnx.Linear(output_channels, num_classes, rngs=rngs)
 
-    def _forward_impl(self, x: Array) -> Array:
-        x = self.conv1(x)
-        x = self.maxpool(x)
-        x = self.stage2(x)
-        x = self.stage3(x)
-        x = self.stage4(x)
-        x = self.conv5(x)
-        x = jnp.mean(x, axis=(1, 2))
-        x = self.fc(x)
-        return x
-
     def __call__(self, x: Array) -> Array:
-        return self._forward_impl(x)
+        x=self.conv1(x)
+        x=self.maxpool(x)
+        x=self.stage2(x)
+        x=self.stage3(x)
+        x=self.stage4(x)
+        x=self.conv5(x)
+        x=jnp.mean(x, axis=(1, 2))
+        x=self.fc(x)
+        return x
 
 
 def _shufflenetv2(*, rngs: nnx.Rngs, **kwargs) -> ShuffleNetV2:
