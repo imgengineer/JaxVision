@@ -1,12 +1,13 @@
+from collections.abc import Callable
 from functools import partial
-from typing import Any, Callable, List, Optional, Type, Union
+from typing import Any
 
 import jax.numpy as jnp
-from jax import Array
 from flax import nnx
+from jax import Array
 
 
-def conv3x3(
+def conv3x3(  # noqa: PLR0913
     in_planes: int,
     out_planes: int,
     stride: int = 1,
@@ -29,9 +30,7 @@ def conv3x3(
     )
 
 
-def conv1x1(
-    in_planes: int, out_planes: int, stride: int = 1, *, rngs: nnx.Rngs
-) -> nnx.Conv:
+def conv1x1(in_planes: int, out_planes: int, stride: int = 1, *, rngs: nnx.Rngs) -> nnx.Conv:
     """1x1 convolution"""
     return nnx.Conv(
         in_planes,
@@ -46,26 +45,28 @@ def conv1x1(
 class BasicBlock(nnx.Module):
     expansion: int = 1
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         inplanes: int,
         planes: int,
         stride: int = 1,
-        downsample: Optional[nnx.Module] = None,
+        downsample: nnx.Module | None = None,
         groups: int = 1,
         base_width: int = 64,
         dilation: int = 1,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
-        if groups != 1 or base_width != 64:
-            raise ValueError("BasicBlock only supports groups=1 and base_width=64")
+        if groups != 1 or base_width != 64:  # noqa: PLR2004
+            msg = "BasicBlock only supports groups=1 and base_width=64"
+            raise ValueError(msg)
         if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
+            msg = "Dilation > 1 not supported in BasicBlock"
+            raise NotImplementedError(msg)
         # Both self.conv1 and self.downsample layers the input when stride != 1
         self.conv1 = conv3x3(inplanes, planes, stride, rngs=rngs)
         self.bn1 = norm_layer(planes, rngs=rngs)
@@ -88,9 +89,7 @@ class BasicBlock(nnx.Module):
             identity = self.downsample(x)
 
         out += identity
-        out = nnx.relu(out)
-
-        return out
+        return nnx.relu(out)
 
 
 class Bottleneck(nnx.Module):
@@ -102,16 +101,16 @@ class Bottleneck(nnx.Module):
 
     expansion: int = 4
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         inplanes: int,
         planes: int,
         stride: int = 1,
-        downsample: Optional[nnx.Module] = None,
+        downsample: nnx.Module | None = None,
         groups: int = 1,
         base_width: int = 64,
         dilation: int = 1,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
@@ -147,22 +146,20 @@ class Bottleneck(nnx.Module):
             identity = self.downsample(x)
 
         out += identity
-        out = nnx.relu(out)
-
-        return out
+        return nnx.relu(out)
 
 
 class ResNet(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        block: Type[Union[BasicBlock, Bottleneck]],
-        layers: List[int],
+        block: type[BasicBlock | Bottleneck],
+        layers: list[int],
         num_classes: int = 1000,
-        zero_init_residual: bool = False,
+        zero_init_residual: bool = False,  # noqa: ARG002, FBT001, FBT002
         groups: int = 1,
         width_per_group: int = 64,
-        replace_stride_with_dilation: Optional[List[bool]] = None,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        replace_stride_with_dilation: list[bool] | None = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
@@ -177,11 +174,11 @@ class ResNet(nnx.Module):
             # each element in the tuple indicates if wu should replace
             # the 2x2 stride with a dilated convlution insted
             replace_stride_with_dilation = [False, False, False]
-        if len(replace_stride_with_dilation) != 3:
-            raise ValueError(
-                "replace_stride_with_dilation shoule be None "
-                f"or a 3-element tuple, got {replace_stride_with_dilation}"
+        if len(replace_stride_with_dilation) != 3:  # noqa: PLR2004
+            msg = (
+                f"replace_stride_with_dilation shoule be None or a 3-element tuple, got {replace_stride_with_dilation}"
             )
+            raise ValueError(msg)
         self.groups = groups
         self.base_width = width_per_group
         self.conv1 = nnx.Conv(
@@ -194,9 +191,7 @@ class ResNet(nnx.Module):
             rngs=rngs,
         )
         self.bn1 = norm_layer(self.inplanes, rngs=rngs)
-        self.maxpool = partial(
-            nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"
-        )
+        self.maxpool = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
         self.layer1 = self._make_layer(block, 64, layers[0], rngs=rngs)
         self.layer2 = self._make_layer(
             block,
@@ -224,13 +219,13 @@ class ResNet(nnx.Module):
         )
         self.fc = nnx.Linear(512 * block.expansion, num_classes, rngs=rngs)
 
-    def _make_layer(
+    def _make_layer(  # noqa: PLR0913
         self,
-        block: Type[Union[BasicBlock, Bottleneck]],
+        block: type[BasicBlock | Bottleneck],
         planes: int,
         blocks: int,
         stride: int = 1,
-        dilate: bool = False,
+        dilate: bool = False,  # noqa: FBT001, FBT002
         *,
         rngs: nnx.Rngs,
     ) -> nnx.Sequential:
@@ -262,7 +257,7 @@ class ResNet(nnx.Module):
         )
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(
+            layers.append(  # noqa: PERF401
                 block(
                     self.inplanes,
                     planes,
@@ -287,20 +282,17 @@ class ResNet(nnx.Module):
         x = self.layer4(x)
 
         x = jnp.mean(x, axis=(1, 2))
-        x = self.fc(x)
-
-        return x
+        return self.fc(x)
 
 
 def _resnet(
-    block: Type[Union[BasicBlock, Bottleneck]],
-    layers: List[int],
+    block: type[BasicBlock | Bottleneck],
+    layers: list[int],
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    model = ResNet(block, layers, rngs=rngs, **kwargs)
-    return model
+    return ResNet(block, layers, rngs=rngs, **kwargs)
 
 
 def resnet18(*, rngs: nnx.Rngs, **kwargs) -> ResNet:
@@ -323,12 +315,13 @@ def resnet152(*, rngs: nnx.Rngs, **kwargs) -> ResNet:
     return _resnet(Bottleneck, [3, 8, 36, 3], rngs=rngs, **kwargs)
 
 
-def resnext50_32x4d(
+def resnext50_32x4d(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """ResNeXt-50 32x4d model from
+    """
+    ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -345,19 +338,18 @@ def resnext50_32x4d(
             for more details about this class.
     .. autoclass:: torchvision.models.ResNeXt50_32X4D_Weights
         :members:
+
     """
-
-    return _resnet(
-        Bottleneck, [3, 4, 6, 3], rngs=rngs, groups=32, width_per_group=4, **kwargs
-    )
+    return _resnet(Bottleneck, [3, 4, 6, 3], rngs=rngs, groups=32, width_per_group=4, **kwargs)
 
 
-def resnext101_32x8d(
+def resnext101_32x8d(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """ResNeXt-50 32x4d model from
+    """
+    ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -374,19 +366,18 @@ def resnext101_32x8d(
             for more details about this class.
     .. autoclass:: torchvision.models.ResNeXt50_32X4D_Weights
         :members:
+
     """
-
-    return _resnet(
-        Bottleneck, [3, 4, 23, 3], rngs=rngs, groups=32, width_per_group=8, **kwargs
-    )
+    return _resnet(Bottleneck, [3, 4, 23, 3], rngs=rngs, groups=32, width_per_group=8, **kwargs)
 
 
-def resnext101_64x4d(
+def resnext101_64x4d(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """ResNeXt-50 32x4d model from
+    """
+    ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -403,19 +394,18 @@ def resnext101_64x4d(
             for more details about this class.
     .. autoclass:: torchvision.models.ResNeXt50_32X4D_Weights
         :members:
+
     """
-
-    return _resnet(
-        Bottleneck, [3, 4, 23, 3], rngs=rngs, groups=64, width_per_group=4, **kwargs
-    )
+    return _resnet(Bottleneck, [3, 4, 23, 3], rngs=rngs, groups=64, width_per_group=4, **kwargs)
 
 
-def wide_resnet50_2(
+def wide_resnet50_2(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """ResNeXt-50 32x4d model from
+    """
+    ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -432,18 +422,18 @@ def wide_resnet50_2(
             for more details about this class.
     .. autoclass:: torchvision.models.ResNeXt50_32X4D_Weights
         :members:
+
     """
+    return _resnet(Bottleneck, [3, 4, 6, 3], rngs=rngs, width_per_group=64 * 2, **kwargs)
 
-    return _resnet(
-        Bottleneck, [3, 4, 6, 3], rngs=rngs, width_per_group=64 * 2, **kwargs
-    )
 
-def wide_resnet101_2(
+def wide_resnet101_2(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """ResNeXt-50 32x4d model from
+    """
+    ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -460,8 +450,6 @@ def wide_resnet101_2(
             for more details about this class.
     .. autoclass:: torchvision.models.ResNeXt50_32X4D_Weights
         :members:
-    """
 
-    return _resnet(
-        Bottleneck, [3, 4, 23, 3], rngs=rngs, width_per_group=64 * 2, **kwargs
-    )
+    """
+    return _resnet(Bottleneck, [3, 4, 23, 3], rngs=rngs, width_per_group=64 * 2, **kwargs)

@@ -1,7 +1,8 @@
-import jax
-from jax import Array
-from flax import nnx
 from functools import partial
+
+import jax
+from flax import nnx
+from jax import Array
 
 
 class AlexNet(nnx.Module):
@@ -47,6 +48,5 @@ class AlexNet(nnx.Module):
             x, (batch_size, 6, 6, channels), method=jax.image.ResizeMethod.LINEAR
         )
         x = x.reshape(batch_size, -1)
-        x = self.classifier(x)
+        return self.classifier(x)
 
-        return x

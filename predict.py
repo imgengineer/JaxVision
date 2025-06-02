@@ -1,34 +1,33 @@
-import re
 import argparse
 import csv
+import re
 from pathlib import Path
 
+import albumentations as A  # noqa: N812
 import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-
-import torch
-from torch.utils.data import DataLoader
-from torch.utils.data.dataloader import default_collate
-
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 import orbax.checkpoint as ocp
-import albumentations as A
+import torch
 from flax import nnx
 from jax.tree_util import tree_map
+from torch.utils.data import DataLoader
+from torch.utils.data.dataloader import default_collate
+from tqdm import tqdm
 
 from models.resnet import resnet18
 
 
 class Config:
     """集中管理常量参数"""
+
     TARGET_SIZE = 224
     NUM_CLASSES = 6
     BATCH_SIZE = 32
     NUM_WORKERS = 2
     CHECKPOINT_DIR = Path("/Users/billy/Documents/DLStudy/JaxVision/checkpoints")
-    CLASS_NAMES = [
+    CLASS_NAMES = [  # noqa: RUF012
         "Chickenpox",
         "Cowpox",
         "Healthy",
@@ -45,17 +44,20 @@ def numpy_collate(batch):
     """
     # default_collate 会把所有张量变成一个 batch 的 tensor
     # 然后我们用 tree_map 把 Tensor -> numpy
-    return tree_map(lambda x: x.numpy() if isinstance(x, torch.Tensor) else x,
-                    default_collate(batch))
+    return tree_map(
+        lambda x: x.numpy() if isinstance(x, torch.Tensor) else x,
+        default_collate(batch),
+    )
 
 
 def load_image_rgb(img_path: Path) -> np.ndarray:
     """
     Load image in RGB format. 如果读不到，抛出异常。
-    """
+    """  # noqa: RUF002
     img = cv2.imread(str(img_path))
     if img is None:
-        raise FileNotFoundError(f"无法读取图片: {img_path}")
+        msg = f"无法读取图片: {img_path}"
+        raise FileNotFoundError(msg)
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
@@ -63,20 +65,22 @@ def build_test_transform(target_size: int) -> A.Compose:
     """
     返回仅包含 Resize 和 Normalize 的测试/推理时用的 Albumentations pipeline
     """
-    return A.Compose([
-        A.Resize(height=target_size, width=target_size, p=1.0),
-        A.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
-            max_pixel_value=255.0,
-        ),
-    ])
+    return A.Compose(
+        [
+            A.Resize(height=target_size, width=target_size, p=1.0),
+            A.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225],
+                max_pixel_value=255.0,
+            ),
+        ]
+    )
 
 
 class PredictionDataset(torch.utils.data.Dataset):
     """
     数据集：遍历一个目录下所有图片，加载、应用 transform 并返回 (numpy_image, path, name)
-    """
+    """  # noqa: RUF002
 
     def __init__(self, image_dir: Path, transforms: A.Compose = None):
         self.image_dir = image_dir
@@ -92,7 +96,8 @@ class PredictionDataset(torch.utils.data.Dataset):
         # 保证顺序一致
         self.image_paths = sorted(set(self.image_paths))
         if not self.image_paths:
-            raise ValueError(f"目录下没有找到有效图片: {image_dir}")
+            msg = f"目录下没有找到有效图片: {image_dir}"
+            raise ValueError(msg)
 
         print(f"🗂️ 共找到 {len(self.image_paths)} 张图片: {image_dir}")
 
@@ -104,7 +109,7 @@ class PredictionDataset(torch.utils.data.Dataset):
         img = load_image_rgb(path)
         if self.transforms:
             img = self.transforms(image=img)["image"]
-        # 返回 (numpy_image, str(path), image_name)
+        # 返回 (numpy_image, str(path), image_name)  # noqa: ERA001
         return img, str(path), path.name
 
 
@@ -114,7 +119,7 @@ def create_dataloader(image_dir: str, batch_size: int, num_workers: int, target_
     """
     tfm = build_test_transform(target_size)
     dataset = PredictionDataset(Path(image_dir), transforms=tfm)
-    loader = DataLoader(
+    return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
@@ -122,20 +127,19 @@ def create_dataloader(image_dir: str, batch_size: int, num_workers: int, target_
         num_workers=num_workers,
         pin_memory=True,
     )
-    return loader
 
 
 def create_model(seed: int, num_classes: int):
     """
     JAX + Flax 下创建 ResNet18 模型实例（参数 shape 用于初始化）
-    """
+    """  # noqa: RUF002
     return resnet18(rngs=nnx.Rngs(seed), num_classes=num_classes)
 
 
 def load_model_from_checkpoint(ckpt_path: str, num_classes: int):
     """
     从 checkpoint 恢复模型参数，并切换到 eval 模式
-    """
+    """  # noqa: RUF002
     # 先用 eval_shape 构造一个同结构的“空” model
     model = nnx.eval_shape(lambda: create_model(0, num_classes))
     state = nnx.state(model)
@@ -147,20 +151,20 @@ def load_model_from_checkpoint(ckpt_path: str, num_classes: int):
     return model
 
 
-
-
 def find_best_checkpoint(checkpoint_dir: Path) -> str:
     """
     在checkpoint目录里找带 'best_model' 且 acc 最大的文件夹，
     返回该文件夹下的 'state' 路径
-    """
+    """  # noqa: RUF002
     if not checkpoint_dir.exists():
-        raise ValueError(f"Checkpoint 目录不存在: {checkpoint_dir}")
+        msg = f"Checkpoint 目录不存在: {checkpoint_dir}"
+        raise ValueError(msg)
 
     # 所有名字包含 best_model 的子目录
     candidates = [d for d in checkpoint_dir.iterdir() if d.is_dir() and "best_model" in d.name]
     if not candidates:
-        raise ValueError(f"没找到 any 'best_model' 子目录: {checkpoint_dir}")
+        msg = f"没找到 any 'best_model' 子目录: {checkpoint_dir}"
+        raise ValueError(msg)
 
     # 用正则提取 “Acc_0.952000” 里面的小数
     def extract_acc(name: str) -> float:
@@ -188,7 +192,7 @@ def preprocess_one(image_path: str, transform: A.Compose):
 @nnx.jit
 def predict_batch(model, images: jnp.ndarray):
     """
-    JIT 编译的预测接口: 
+    JIT 编译的预测接口:
     输入: (batch, H, W, C)
     返回: (pred_idx, 全概率分布)
     """
@@ -201,7 +205,7 @@ def predict_batch(model, images: jnp.ndarray):
 def predict_single(model, image_path: str, transform: A.Compose, class_names: list):
     """
     单张图片推理，返回 dict 包含预测结果、原图
-    """
+    """  # noqa: RUF002
     img_batch, orig_img = preprocess_one(image_path, transform)
     pred_idx, probs = predict_batch(model, img_batch)
 
@@ -217,32 +221,40 @@ def predict_single(model, image_path: str, transform: A.Compose, class_names: li
     }
 
 
-def predict_directory(model, image_dir: str, class_names: list,
-                      batch_size: int, num_workers: int, save_csv: bool = False):
+def predict_directory(  # noqa: PLR0913
+    model,
+    image_dir: str,
+    class_names: list,
+    batch_size: int,
+    num_workers: int,
+    save_csv: bool = False,  # noqa: FBT001, FBT002
+):
     """
     对目录下所有图片进行推理，使用 DataLoader 批量处理
-    """
+    """  # noqa: RUF002
     print(f"\n🗂️ 对目录进行推理: {image_dir}")
     loader = create_dataloader(image_dir, batch_size, num_workers, Config.TARGET_SIZE)
 
     all_results = []
     for images_np, paths, names in tqdm(loader, desc="批量推理中"):
-        # 样本已经是 numpy-array，shape=(batch, H, W, C)
+        # 样本已经是 numpy-array，shape=(batch, H, W, C)  # noqa: RUF003
         # 直接转 JAX array
         images_jax = jnp.array(images_np, dtype=jnp.float32)
         preds, probs = predict_batch(model, images_jax)
 
-        # 遍历 batch 内的每张图，收集结果
+        # 遍历 batch 内的每张图，收集结果  # noqa: RUF003
         for i in range(len(paths)):
             idx = int(preds[i])
-            all_results.append({
-                "image_path": paths[i],
-                "image_name": names[i],
-                "pred_idx": idx,
-                "pred_name": class_names[idx],
-                "confidence": float(probs[i, idx]),
-                "all_probs": np.array(probs[i]),
-            })
+            all_results.append(
+                {
+                    "image_path": paths[i],
+                    "image_name": names[i],
+                    "pred_idx": idx,
+                    "pred_name": class_names[idx],
+                    "confidence": float(probs[i, idx]),
+                    "all_probs": np.array(probs[i]),
+                }
+            )
 
     _print_summary(all_results)
     if save_csv:
@@ -253,14 +265,14 @@ def predict_directory(model, image_dir: str, class_names: list,
 def _print_summary(results: list):
     """
     打印预测总结信息：总数、平均置信度、各类分布 & 最高/最低置信样本
-    """
+    """  # noqa: RUF002
     total = len(results)
     if total == 0:
         print("⚠️ 没有结果可展示")
         return
 
     avg_conf = sum(r["confidence"] for r in results) / total
-    print("\n📊 预测总结：")
+    print("\n📊 预测总结：")  # noqa: RUF001
     print(f"  总图像数量: {total}")
     print(f"  平均置信度: {avg_conf:.4f}")
 
@@ -269,37 +281,35 @@ def _print_summary(results: list):
     for r in results:
         class_counts[r["pred_name"]] = class_counts.get(r["pred_name"], 0) + 1
 
-    print("  类别分布：")
+    print("  类别分布：")  # noqa: RUF001
     for cls, cnt in sorted(class_counts.items()):
         pct = cnt / total * 100
         print(f"    {cls}: {cnt} ({pct:.1f}%)")
 
     # 排序找最高 / 最低
     sorted_r = sorted(results, key=lambda x: x["confidence"], reverse=True)
-    print("\n🎯 最高置信度样本：")
+    print("\n🎯 最高置信度样本：")  # noqa: RUF001
     for i, r in enumerate(sorted_r[:3], 1):
         print(f"    {i}. {r['image_name']}: {r['pred_name']} ({r['confidence']:.4f})")
 
-    print("\n🤔 最低置信度样本：")
+    print("\n🤔 最低置信度样本：")  # noqa: RUF001
     for i, r in enumerate(sorted_r[-3:], 1):
         print(f"    {i}. {r['image_name']}: {r['pred_name']} ({r['confidence']:.4f})")
-
-
 
 
 def _save_results_csv(results: list, image_dir: str, class_names: list):
     """
     将预测结果保存到 CSV 文件，包含每个类别的概率列
-    """
+    """  # noqa: RUF002
     out_path = Path(image_dir) / "prediction_results.csv"
     print(f"\n💾 保存结果到: {out_path}")
 
     fieldnames = ["image_name", "image_path", "pred_name", "confidence"]
     # 添加每个 class 的概率列
     for c in class_names:
-        fieldnames.append(f"prob_{c}")
+        fieldnames.append(f"prob_{c}")  # noqa: PERF401
 
-    with open(out_path, "w", newline="", encoding="utf-8") as f:
+    with open(out_path, "w", newline="", encoding="utf-8") as f:  # noqa: PTH123
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for r in results:
@@ -313,20 +323,20 @@ def _save_results_csv(results: list, image_dir: str, class_names: list):
                 row[f"prob_{cn}"] = f"{r['all_probs'][idx]:.6f}"
             writer.writerow(row)
 
-    print("✅ 保存完成！")
+    print("✅ 保存完成！")  # noqa: RUF001
 
 
 def visualize_results_sample(results: list, num_samples: int = 9):
     """
     从最高与最低置信度各取部分样本，显示图 + 预测结果
-    """
+    """  # noqa: RUF002
     if not results:
         print("⚠️ 无结果可视化")
         return
 
     sorted_r = sorted(results, key=lambda x: x["confidence"], reverse=True)
     top_k = sorted_r[: num_samples // 2]
-    low_k = sorted_r[-(num_samples - num_samples // 2):]
+    low_k = sorted_r[-(num_samples - num_samples // 2) :]
     samples = top_k + low_k
 
     cols = 3
@@ -348,8 +358,15 @@ def visualize_results_sample(results: list, num_samples: int = 9):
             title = f"{r['image_name']}\n{r['pred_name']}\nConf: {r['confidence']:.3f}"
             ax.set_title(title, fontsize=10)
             ax.axis("off")
-        except Exception:
-            ax.text(0.5, 0.5, f"加载失败\n{r['image_name']}", ha="center", va="center", transform=ax.transAxes)
+        except Exception:  # noqa: BLE001
+            ax.text(
+                0.5,
+                0.5,
+                f"加载失败\n{r['image_name']}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.set_title(f"{r['pred_name']}\nConf: {r['confidence']:.3f}")
             ax.axis("off")
 
@@ -359,28 +376,28 @@ def visualize_results_sample(results: list, num_samples: int = 9):
         row, col = divmod(i, cols)
         axes[row, col].axis("off")
 
-    plt.suptitle("示例预测结果（高/低置信度）", fontsize=14)
+    plt.suptitle("示例预测结果（高/低置信度）", fontsize=14)  # noqa: RUF001
     plt.tight_layout()
     plt.show()
 
 
-def visualize_prediction(result: dict, show_prob: bool = True):
+def visualize_prediction(result: dict, show_prob: bool = True):  # noqa: FBT001, FBT002
     """
     单张图片可视化：图像 + 条形图概率分布
-    """
+    """  # noqa: RUF002
     figsize = (15, 6) if show_prob else (8, 6)
     fig, axs = plt.subplots(1, 2 if show_prob else 1, figsize=figsize)
     if not show_prob:
         axs = [axs]
 
-    # 左图：原图 + 标题
+    # 左图：原图 + 标题  # noqa: RUF003
     img = result.get("orig_img", load_image_rgb(Path(result["image_path"])))
     axs[0].imshow(img)
     axs[0].set_title(f"{result['image_name']}\nPred: {result['pred_name']}\nConf: {result['confidence']:.4f}")
     axs[0].axis("off")
 
     if show_prob:
-        # 右图：条形图表示各类别概率
+        # 右图：条形图表示各类别概率  # noqa: RUF003
         classes = Config.CLASS_NAMES
         probs = result["all_probs"]
         bars = axs[1].bar(range(len(classes)), probs)
@@ -396,19 +413,39 @@ def visualize_prediction(result: dict, show_prob: bool = True):
     plt.show()
 
 
-def main():
+def main():  # noqa: PLR0912, PLR0915
     parser = argparse.ArgumentParser(description="使用训练好的 ResNet18 模型进行推理")
-    parser.add_argument("--image", type=str, help="单张图片路径，用于预测")
+    parser.add_argument("--image", type=str, help="单张图片路径，用于预测")  # noqa: RUF001
     parser.add_argument("--images", type=str, nargs="+", help="多张图片路径列表")
-    parser.add_argument("--directory", type=str, help="图片目录，用于批量预测")
+    parser.add_argument("--directory", type=str, help="图片目录，用于批量预测")  # noqa: RUF001
     parser.add_argument("--checkpoint", type=str, help="指定 checkpoint 文件 (可选)")
-    parser.add_argument("--checkpoint_dir", type=str, default=str(Config.CHECKPOINT_DIR),
-                        help="checkpoint 所在目录")
-    parser.add_argument("--batch_size", type=int, default=Config.BATCH_SIZE, help="批量预测时的 batch size")
-    parser.add_argument("--num_workers", type=int, default=Config.NUM_WORKERS, help="DataLoader 的 num_workers")
+    parser.add_argument(
+        "--checkpoint_dir",
+        type=str,
+        default=str(Config.CHECKPOINT_DIR),
+        help="checkpoint 所在目录",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=Config.BATCH_SIZE,
+        help="批量预测时的 batch size",
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=Config.NUM_WORKERS,
+        help="DataLoader 的 num_workers",
+    )
     parser.add_argument("--save_results", action="store_true", help="是否保存预测结果到 CSV")
     parser.add_argument("--no_viz", action="store_true", help="跳过可视化")
-    parser.add_argument("--class_names", type=str, nargs="+", default=Config.CLASS_NAMES, help="类别名称列表")
+    parser.add_argument(
+        "--class_names",
+        type=str,
+        nargs="+",
+        default=Config.CLASS_NAMES,
+        help="类别名称列表",
+    )
 
     args = parser.parse_args()
 
@@ -424,7 +461,7 @@ def main():
     if not ckpt_path:
         try:
             ckpt_path = find_best_checkpoint(Path(args.checkpoint_dir))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ 获取最佳 checkpoint 失败: {e}")
             return
 
@@ -432,8 +469,8 @@ def main():
     print("\n🏗️ 正在加载模型...")
     try:
         model = load_model_from_checkpoint(ckpt_path, Config.NUM_CLASSES)
-        print("✅ 模型加载成功！")
-    except Exception as e:
+        print("✅ 模型加载成功！")  # noqa: RUF001
+    except Exception as e:  # noqa: BLE001
         print(f"❌ 模型加载出错: {e}")
         return
 
@@ -445,7 +482,7 @@ def main():
         print(f"\n🔍 正在对单张图片进行预测: {args.image}")
         try:
             res = predict_single(model, args.image, transform, args.class_names)
-            print("\n📊 预测结果：")
+            print("\n📊 预测结果：")  # noqa: RUF001
             print(f"  图像: {res['image_path']}")
             print(f"  预测类别: {res['pred_name']}")
             print(f"  置信度: {res['confidence']:.4f}")
@@ -453,23 +490,23 @@ def main():
 
             if not args.no_viz:
                 visualize_prediction(res)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ 单图预测失败: {e}")
 
     # 多张图片逐一预测
     elif args.images:
-        print(f"\n🔍 正在对多张图片列表进行预测，共 {len(args.images)} 张")
+        print(f"\n🔍 正在对多张图片列表进行预测，共 {len(args.images)} 张")  # noqa: RUF001
         results = []
         for img_path in args.images:
             try:
                 r = predict_single(model, img_path, transform, args.class_names)
                 results.append(r)
                 print(f"✅ {r['image_name']}: {r['pred_name']} ({r['confidence']:.4f})")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"❌ {Path(img_path).name} 预测失败: {e}")
 
         if results:
-            print("\n📊 批量预测统计：")
+            print("\n📊 批量预测统计：")  # noqa: RUF001
             dist = {}
             for r in results:
                 dist[r["pred_name"]] = dist.get(r["pred_name"], 0) + 1
@@ -490,12 +527,12 @@ def main():
                 args.class_names,
                 args.batch_size,
                 args.num_workers,
-                save_csv=args.save_results
+                save_csv=args.save_results,
             )
             if not args.no_viz and all_results:
                 print("\n📈 展示示例可视化")
                 visualize_results_sample(all_results)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ 目录预测出错: {e}")
             return
 

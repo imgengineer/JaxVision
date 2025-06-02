@@ -1,14 +1,17 @@
 import copy
-from functools import partial
 import math
-from typing import Any, List, Sequence, Union, Tuple, Optional, Callable
-from jax import Array
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from functools import partial
+from typing import Any
+
 import jax.numpy as jnp
 from flax import nnx
-from dataclasses import dataclass
+from jax import Array
 
 from ops.misc import Conv2dNormActivation, SqueezeExtraction
 from ops.stochastic_depth import StochasticDepth
+
 from ._utils import _make_divisible
 
 
@@ -24,14 +27,14 @@ class _MBConvConfig:
 
     @staticmethod
     def adjust_channels(
-        channels: int, width_mult: float, min_value: Optional[int] = None
+        channels: int, width_mult: float, min_value: int | None = None
     ) -> int:
         return _make_divisible(channels * width_mult, 8, min_value)
 
 
 class MBConvConfig(_MBConvConfig):
     # Stores information listed at Table 1 of the EfficientNet paper & Table 4 of the EfficientNetV2 paper
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         expand_ratio: float,
         kernel: int,
@@ -41,7 +44,7 @@ class MBConvConfig(_MBConvConfig):
         num_layers: int,
         width_mult: float = 1.0,
         depth_mult: float = 1.0,
-        block: Optional[Callable[..., nnx.Module]] = None,
+        block: Callable[..., nnx.Module] | None = None,
     ) -> None:
         input_channels = self.adjust_channels(input_channels, width_mult)
         out_channels = self.adjust_channels(out_channels, width_mult)
@@ -60,12 +63,12 @@ class MBConvConfig(_MBConvConfig):
 
     @staticmethod
     def adjust_depth(num_layers: int, depth_mult: float):
-        return int(math.ceil(num_layers * depth_mult))
+        return math.ceil(num_layers * depth_mult)
 
 
 class FusedMBConvConfig(_MBConvConfig):
     # Stores information listed at Table 4 of the EfficientNetv2 paper
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         expand_ratio: float,
         kernel: int,
@@ -73,7 +76,7 @@ class FusedMBConvConfig(_MBConvConfig):
         input_channels: int,
         out_channels: int,
         num_layers: int,
-        block: Optional[Callable[..., nnx.Module]] = None,
+        block: Callable[..., nnx.Module] | None = None,
     ) -> None:
         if block is None:
             block = FusedMBConv
@@ -89,7 +92,7 @@ class FusedMBConvConfig(_MBConvConfig):
 
 
 class MBConv(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         cnf: MBConvConfig,
         stochastic_depth_prob: float,
@@ -101,14 +104,15 @@ class MBConv(nnx.Module):
     ) -> None:
         super().__init__()
 
-        if not (1 <= cnf.stride <= 2):
-            raise ValueError("illegal stride value")
+        if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
+            msg = "illegal stride value"
+            raise ValueError(msg)
 
         self.use_res_connect = (
             cnf.stride == 1 and cnf.input_channels == cnf.out_channels
         )
 
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
         activation_layer = nnx.silu
 
         # expand
@@ -168,7 +172,7 @@ class MBConv(nnx.Module):
         )
         self.out_channels = cnf.out_channels
 
-    def __call__(self, input: Array) -> Array:
+    def __call__(self, input: Array) -> Array:  # noqa: A002
         result = self.block(input)
         if self.use_res_connect:
             result = self.stochastic_depth(result)
@@ -188,14 +192,15 @@ class FusedMBConv(nnx.Module):
     ) -> None:
         super().__init__()
 
-        if not (1 <= cnf.stride <= 2):
-            raise ValueError("illegal stride value")
+        if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
+            msg = "illegal stride value"
+            raise ValueError(msg)
 
         self.use_res_connect = (
             cnf.stride == 1 and cnf.input_channels == cnf.out_channels
         )
 
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
         activation_layer = nnx.silu
 
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
@@ -243,7 +248,7 @@ class FusedMBConv(nnx.Module):
         )
         self.out_channels = cnf.out_channels
 
-    def __call__(self, input: Array) -> Array:
+    def __call__(self, input: Array) -> Array:  # noqa: A002
         result = self.block(input)
         if self.use_res_connect:
             result = self.stochastic_depth(result)
@@ -252,14 +257,14 @@ class FusedMBConv(nnx.Module):
 
 
 class EfficientNet(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: D417, PLR0913
         self,
-        inverted_residual_setting: Sequence[Union[MBConvConfig, FusedMBConvConfig]],
+        inverted_residual_setting: Sequence[MBConvConfig | FusedMBConvConfig],
         dropout: float,
         stochastic_depth_prob: float = 0.2,
         num_classes: int = 1000,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
-        last_channel: Optional[int] = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
+        last_channel: int | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
@@ -273,22 +278,25 @@ class EfficientNet(nnx.Module):
             num_classes (int): Number of classes
             norm_layer (Optional[Callable[..., nn.Module]]): Module specifying the normalization layer to use
             last_channel (int): The number of channels on the penultimate layer
+
         """
         super().__init__()
 
         if not inverted_residual_setting:
-            raise ValueError("The inverted_residual_setting should not be empty")
-        elif not (
+            msg = "The inverted_residual_setting should not be empty"
+            raise ValueError(msg)
+        if not (
             isinstance(inverted_residual_setting, Sequence)
-            and all([isinstance(s, _MBConvConfig) for s in inverted_residual_setting])
+            and all(isinstance(s, _MBConvConfig) for s in inverted_residual_setting)
         ):
+            msg = "The inverted_residual_setting should be List[MBConvConfig]"
             raise TypeError(
-                "The inverted_residual_setting should be List[MBConvConfig]"
+                msg
             )
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
 
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
 
         # building first layer
         firstconv_output_channels = inverted_residual_setting[0].input_channels
@@ -308,7 +316,7 @@ class EfficientNet(nnx.Module):
         total_stage_blocks = sum(cnf.num_layers for cnf in inverted_residual_setting)
         stage_block_id = 0
         for cnf in inverted_residual_setting:
-            stage: List[nnx.Module] = []
+            stage: list[nnx.Module] = []
             for _ in range(cnf.num_layers):
                 # copy to avoid modifications. shallow copy is enough
                 block_cnf = copy.copy(cnf)
@@ -353,33 +361,31 @@ class EfficientNet(nnx.Module):
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = jnp.mean(x, axis=(1, 2))
-        x = self.classifier(x)
-        return x
+        return self.classifier(x)
 
 
 def _efficientnet(
-    inverted_residual_setting: Sequence[Union[MBConvConfig, FusedMBConvConfig]],
+    inverted_residual_setting: Sequence[MBConvConfig | FusedMBConvConfig],
     dropout: float,
-    last_channel: Optional[int],
+    last_channel: int | None,
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    model = EfficientNet(
+    return EfficientNet(
         inverted_residual_setting,
         dropout,
         last_channel=last_channel,
         rngs=rngs,
         **kwargs,
     )
-    return model
 
 
 def _efficientnet_conf(
     arch: str,
     **kwargs: Any,
-) -> Tuple[Sequence[Union[MBConvConfig, FusedMBConvConfig]], Optional[int]]:
-    inverted_residual_setting: Sequence[Union[MBConvConfig, FusedMBConvConfig]]
+) -> tuple[Sequence[MBConvConfig | FusedMBConvConfig], int | None]:
+    inverted_residual_setting: Sequence[MBConvConfig | FusedMBConvConfig]
     if arch.startswith("efficientnet_b"):
         bneck_conf = partial(
             MBConvConfig,
@@ -429,7 +435,8 @@ def _efficientnet_conf(
         ]
         last_channel = 1280
     else:
-        raise ValueError(f"Unsupported model type {arch}")
+        msg = f"Unsupported model type {arch}"
+        raise ValueError(msg)
 
     return inverted_residual_setting, last_channel
 
@@ -451,12 +458,13 @@ def efficientnet_b0(
     )
 
 
-def efficientnet_b1(
+def efficientnet_b1(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """EfficientNet B1 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """
+    EfficientNet B1 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -473,8 +481,8 @@ def efficientnet_b1(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B1_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b1", width_mult=1.0, depth_mult=1.1
     )
@@ -487,8 +495,9 @@ def efficientnet_b1(
     )
 
 
-def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:
-    """EfficientNet B2 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:  # noqa: D417
+    """
+    EfficientNet B2 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -505,8 +514,8 @@ def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B2_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b2", width_mult=1.1, depth_mult=1.2
     )
@@ -519,12 +528,13 @@ def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:
     )
 
 
-def efficientnet_b3(
+def efficientnet_b3(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """EfficientNet B3 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """
+    EfficientNet B3 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -541,8 +551,8 @@ def efficientnet_b3(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B3_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b3", width_mult=1.2, depth_mult=1.4
     )
@@ -555,12 +565,13 @@ def efficientnet_b3(
     )
 
 
-def efficientnet_b4(
+def efficientnet_b4(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """EfficientNet B4 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """
+    EfficientNet B4 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -577,8 +588,8 @@ def efficientnet_b4(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B4_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b4", width_mult=1.4, depth_mult=1.8
     )
@@ -591,12 +602,13 @@ def efficientnet_b4(
     )
 
 
-def efficientnet_b5(
+def efficientnet_b5(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """EfficientNet B5 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """
+    EfficientNet B5 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -613,8 +625,8 @@ def efficientnet_b5(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B5_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b5", width_mult=1.6, depth_mult=2.2
     )
@@ -628,12 +640,13 @@ def efficientnet_b5(
     )
 
 
-def efficientnet_b6(
+def efficientnet_b6(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """EfficientNet B6 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """
+    EfficientNet B6 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -650,8 +663,8 @@ def efficientnet_b6(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B6_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b6", width_mult=1.8, depth_mult=2.6
     )
@@ -665,12 +678,13 @@ def efficientnet_b6(
     )
 
 
-def efficientnet_b7(
+def efficientnet_b7(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """EfficientNet B7 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """
+    EfficientNet B7 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -687,8 +701,8 @@ def efficientnet_b7(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_B7_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf(
         "efficientnet_b7", width_mult=2.0, depth_mult=3.1
     )
@@ -702,7 +716,7 @@ def efficientnet_b7(
     )
 
 
-def efficientnet_v2_s(
+def efficientnet_v2_s(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -725,8 +739,8 @@ def efficientnet_v2_s(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_V2_S_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_v2_s")
     return _efficientnet(
         inverted_residual_setting,
@@ -738,7 +752,7 @@ def efficientnet_v2_s(
     )
 
 
-def efficientnet_v2_m(
+def efficientnet_v2_m(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -761,8 +775,8 @@ def efficientnet_v2_m(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_V2_M_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_v2_m")
     return _efficientnet(
         inverted_residual_setting,
@@ -774,7 +788,7 @@ def efficientnet_v2_m(
     )
 
 
-def efficientnet_v2_l(
+def efficientnet_v2_l(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -797,8 +811,8 @@ def efficientnet_v2_l(
             for more details about this class.
     .. autoclass:: torchvision.models.EfficientNet_V2_L_Weights
         :members:
-    """
 
+    """
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_v2_l")
     return _efficientnet(
         inverted_residual_setting,

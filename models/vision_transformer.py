@@ -1,12 +1,13 @@
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, List, NamedTuple, Optional
+from typing import NamedTuple
 
 import jax
-from jax import Array
-from flax import nnx
 import jax.numpy as jnp
+from flax import nnx
+from jax import Array
 
-from ops.misc import Conv2dNormActivation, MLP
+from ops.misc import MLP, Conv2dNormActivation
 
 
 class ConvStemConfig(NamedTuple):
@@ -35,14 +36,14 @@ class MLPBlock(MLP):
 class EncoderBlock(nnx.Module):
     """Transformer encoder block"""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         num_heads: int,
         hidden_dim: int,
         mlp_dim: int,
         dropout: float,
         attention_dropout: float,
-        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),
+        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
         *,
         rngs: nnx.Rngs,
     ):
@@ -64,7 +65,7 @@ class EncoderBlock(nnx.Module):
         self.ln_2 = norm_layer(hidden_dim, rngs=rngs)
         self.mlp = MLPBlock(hidden_dim, mlp_dim, dropout, rngs=rngs)
 
-    def __call__(self, input: Array) -> Array:
+    def __call__(self, input: Array) -> Array:  # noqa: A002
         x = self.ln_1(input)
         x = self.self_attention(x, x, x)
         x = self.dropout(x)
@@ -78,7 +79,7 @@ class EncoderBlock(nnx.Module):
 class Encoder(nnx.Module):
     """Transformer Model Encoder for sequence to sequence translation."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         seq_length: int,
         num_layers: int,
@@ -87,19 +88,17 @@ class Encoder(nnx.Module):
         mlp_dim: int,
         dropout: float,
         attention_dropout: float,
-        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),
+        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
         *,
         rngs: nnx.Rngs,
     ):
         super().__init__()
 
-        self.pos_embedding = nnx.Param(
-            jax.random.normal(rngs.params(), (1, seq_length, hidden_dim)) * 0.02
-        )
+        self.pos_embedding = nnx.Param(jax.random.normal(rngs.params(), (1, seq_length, hidden_dim)) * 0.02)
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
-        layers: List[nnx.Module] = []
-        for i in range(num_layers):
-            layers.append(
+        layers: list[nnx.Module] = []
+        for _i in range(num_layers):
+            layers.append(  # noqa: PERF401
                 EncoderBlock(
                     num_heads,
                     hidden_dim,
@@ -113,15 +112,15 @@ class Encoder(nnx.Module):
         self.layers = nnx.Sequential(*layers)
         self.ln = norm_layer(hidden_dim, rngs=rngs)
 
-    def __call__(self, input: Array) -> Array:
-        input = input + self.pos_embedding.value
+    def __call__(self, input: Array) -> Array:  # noqa: A002
+        input = input + self.pos_embedding.value  # noqa: A001
         return self.ln(self.layers(self.dropout(input)))
 
 
 class VisionTransformer(nnx.Module):
     """Vision Transformer as per https://arxiv.org/abs/2010.11929."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         image_size: int,
         patch_size: int,
@@ -132,9 +131,9 @@ class VisionTransformer(nnx.Module):
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
         num_classes: int = 1000,
-        representation_size: Optional[int] = None,
-        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),
-        conv_stem_configs: Optional[List[ConvStemConfig]] = None,
+        representation_size: int | None = None,
+        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
+        conv_stem_configs: list[ConvStemConfig] | None = None,
         *,
         rngs: nnx.Rngs,
     ):
@@ -153,7 +152,7 @@ class VisionTransformer(nnx.Module):
             # As per https://arxiv.org/abs/2104.14881
             seq_proj = []
             prev_channels = 3
-            for i, conv_stem_layer_config in enumerate(conv_stem_configs):
+            for _i, conv_stem_layer_config in enumerate(conv_stem_configs):
                 seq_proj.append(
                     Conv2dNormActivation(
                         in_channels=prev_channels,
@@ -166,9 +165,7 @@ class VisionTransformer(nnx.Module):
                     )
                 )
                 prev_channels = conv_stem_layer_config.out_channels
-            seq_proj.append(
-                nnx.Conv(prev_channels, hidden_dim, kernel_size=(1, 1), rngs=rngs)
-            )
+            seq_proj.append(nnx.Conv(prev_channels, hidden_dim, kernel_size=(1, 1), rngs=rngs))
             self.conv_proj: nnx.Module = nnx.Sequential(*seq_proj)
         else:
             self.conv_proj = nnx.Conv(
@@ -219,11 +216,10 @@ class VisionTransformer(nnx.Module):
         # (n, h, w, c) -> (n, n_h, n_w, hidden_dim)
         x = self.conv_proj(x)
         # (n, n_h, n_w, hidden_dim) -> (n, (n_h * n_w), hidden_dim)
-        x = x.reshape(n, n_h * n_w, self.hidden_dim)
+        return x.reshape(n, n_h * n_w, self.hidden_dim)
         # The self attention layer expects inputs in the format (N, S, E)
         # where S is the source sequence length, N is the batch size, E is the
         # embedding dimension
-        return x
 
     def __call__(self, x: Array) -> Array:
         # Reshape the input Tensor
@@ -231,9 +227,7 @@ class VisionTransformer(nnx.Module):
         n = x.shape[0]
 
         # Expand the class token to the full batch
-        batch_class_token = jnp.broadcast_to(
-            self.class_token.value, (n, *self.class_token.value.shape[1:])
-        )
+        batch_class_token = jnp.broadcast_to(self.class_token.value, (n, *self.class_token.value.shape[1:]))
         x = jnp.concat([batch_class_token, x], axis=1)
 
         x = self.encoder(x)
@@ -241,12 +235,10 @@ class VisionTransformer(nnx.Module):
         # Classifier "token" as used by standard language architectures
         x = x[:, 0]
 
-        x = self.heads(x)
-
-        return x
+        return self.heads(x)
 
 
-def _vision_transformer(
+def _vision_transformer(  # noqa: PLR0913
     patch_size: int,
     num_layers: int,
     num_heads: int,
@@ -258,7 +250,7 @@ def _vision_transformer(
 ) -> VisionTransformer:
     image_size = kwargs.pop("image_size", 224)
 
-    model = VisionTransformer(
+    return VisionTransformer(
         image_size=image_size,
         patch_size=patch_size,
         num_layers=num_layers,
@@ -268,7 +260,6 @@ def _vision_transformer(
         rngs=rngs,
         **kwargs,
     )
-    return model
 
 
 def vit_b_16(*, rngs: nnx.Rngs, **kwargs) -> VisionTransformer:

@@ -1,20 +1,19 @@
 import os
-import cv2
 import random
-import numpy as np
+
+import albumentations as A  # noqa: N812
+import cv2
 import matplotlib.pyplot as plt
-from tqdm import tqdm
-
-import torch
-import torchvision
-from torch.utils.data import DataLoader
-from torch.utils.data.dataloader import default_collate
-
+import numpy as np
 import optax
 import orbax.checkpoint as ocp
-import albumentations as A
+import torch
+import torchvision
 from flax import nnx
 from jax.tree_util import tree_map
+from torch.utils.data import DataLoader
+from torch.utils.data.dataloader import default_collate
+from tqdm import tqdm
 
 from models.resnet import resnet18
 
@@ -39,7 +38,7 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    np.random.seed(seed)  # noqa: NPY002
     random.seed(seed)
 
 
@@ -51,11 +50,10 @@ def numpy_collate(batch):
 def load_image(img_path):
     """Load image in RGB format"""
     img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-def create_transforms(target_size, is_training=True):
+def create_transforms(target_size, is_training=True):  # noqa: FBT002
     """Create data augmentation transforms"""
     transforms_list = [
         # Fix resize issue - use direct resize instead of SmallestMaxSize + Crop
@@ -146,7 +144,7 @@ def create_model(seed, num_classes):
 
 def save_model(model, path):
     """Save model state"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)  # noqa: PTH103, PTH120
     checkpointer = ocp.PyTreeCheckpointer()
     state = nnx.state(model)
     checkpointer.save(path, state)
@@ -230,7 +228,7 @@ def save_best_model_if_improved(model, val_result, best_acc, epoch_num, checkpoi
     current_acc = float(val_result["accuracy"])
 
     if current_acc > best_acc:
-        checkpoint_path = os.path.join(
+        checkpoint_path = os.path.join(  # noqa: PTH118
             checkpoint_dir,
             f"best_model_Epoch_{epoch_num + 1}_Acc_{current_acc:.6f}",
             "state",
@@ -255,7 +253,7 @@ def plot_training_metrics(metrics_history):
     ax1.set_xlabel("Epoch")
     ax1.set_ylabel("Loss")
     ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    ax1.grid(True, alpha=0.3)  # noqa: FBT003
 
     # Plot accuracy
     ax2.plot(
@@ -266,7 +264,7 @@ def plot_training_metrics(metrics_history):
     ax2.set_xlabel("Epoch")
     ax2.set_ylabel("Accuracy")
     ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    ax2.grid(True, alpha=0.3)  # noqa: FBT003
 
     plt.tight_layout()
     plt.show()
@@ -278,7 +276,7 @@ def print_dataset_info(train_dataset, val_dataset):
     print(f"  Train samples: {len(train_dataset)}")
     print(f"  Validation samples: {len(val_dataset)}")
     print(f"  Classes: {train_dataset.classes}")
-    print(f"  Number of classes: {len(train_dataset.classes)}")
+    print(f"  Number of classes:ß {len(train_dataset.classes)}")
 
 
 def main():

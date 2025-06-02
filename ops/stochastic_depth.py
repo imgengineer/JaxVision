@@ -1,11 +1,15 @@
-from flax import nnx
-from jax import Array
 import jax
 import jax.numpy as jnp
+from flax import nnx
+from jax import Array
 
 
-def stochastic_depth(
-    rngs: nnx.Rngs, input: Array, p: float, mode: str, training: bool = True
+def stochastic_depth(  # noqa: D417
+    rngs: nnx.Rngs,
+    input: Array,  # noqa: A002
+    p: float,
+    mode: str,
+    training: bool = True,  # noqa: FBT001, FBT002
 ) -> Array:
     """
     Implements the Stochastic Depth from `"Deep Networks with Stochastic Depth"
@@ -23,16 +27,19 @@ def stochastic_depth(
 
     Returns:
         Tensor[N, ...]: The randomly zeroed tensor.
+
     """
     if p < 0.0 or p > 1.0:
-        raise ValueError(f"drop probability has to between 0 and 1, but got {p}")
+        msg = f"drop probability has to between 0 and 1, but got {p}"
+        raise ValueError(msg)
     if mode not in ["batch", "row"]:
-        raise ValueError(f"mode has to be either 'batch' or 'row', but got {mode}")
+        msg = f"mode has to be either 'batch' or 'row', but got {mode}"
+        raise ValueError(msg)
     if not training or p == 0.0:
         return input
 
     survival_rate = 1.0 - p
-    if mode == "row":
+    if mode == "row":  # noqa: SIM108
         # Zeroes randomly selected rows from the batch.
         # Mask shape: (batch_size, 1, 1, ...) - broadcasting will handle the rest
         size = (input.shape[0],) + (1,) * (input.ndim - 1)
@@ -59,7 +66,11 @@ def stochastic_depth(
 
 class StochasticDepth(nnx.Module):
     def __init__(
-        self, p: float, mode: str, rngs: nnx.Rngs, training: bool = True
+        self,
+        p: float,
+        mode: str,
+        rngs: nnx.Rngs,
+        training: bool = True,  # noqa: FBT001, FBT002
     ) -> None:
         super().__init__()
         self.p = p

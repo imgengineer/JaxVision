@@ -1,9 +1,9 @@
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, List, Tuple
 
 import jax.numpy as jnp
-from jax import Array
 from flax import nnx
+from jax import Array
 
 
 def channel_shuffle(x: Array, groups: int) -> Array:
@@ -16,24 +16,22 @@ def channel_shuffle(x: Array, groups: int) -> Array:
     x = jnp.transpose(x, (0, 1, 2, 4, 3))
 
     # flatten
-    x = x.reshape(bacth_size, height, width, num_channels)
-
-    return x
+    return x.reshape(bacth_size, height, width, num_channels)
 
 
 class InvertedResidual(nnx.Module):
     def __init__(self, inp: int, oup: int, stride: int, *, rngs: nnx.Rngs):
         super().__init__()
 
-        if not (1 <= stride <= 3):
-            raise ValueError("illegal stride value")
+        if not (1 <= stride <= 3):  # noqa: PLR2004
+            msg = "illegal stride value"
+            raise ValueError(msg)
         self.stride = stride
 
         branch_features = oup // 2
         if (self.stride == 1) and (inp != branch_features << 1):
-            raise ValueError(
-                f"Invalid combination of stride {stride},inp {inp} and oup {oup} values. If stride == 1 the inp should be equal to oup // 2 << 1"
-            )
+            msg = f"Invalid combination of stride {stride},inp {inp} and oup {oup} values. If stride == 1 the inp should be equal to oup // 2 << 1"
+            raise ValueError(msg)
 
         if self.stride > 1:
             self.branch1 = nnx.Sequential(
@@ -42,7 +40,7 @@ class InvertedResidual(nnx.Module):
                     inp,
                     kernel_size=(3, 3),
                     stride=self.stride,
-                    padding=(1,1),
+                    padding=(1, 1),
                     rngs=rngs,
                 ),
                 nnx.BatchNorm(inp, rngs=rngs),
@@ -96,19 +94,17 @@ class InvertedResidual(nnx.Module):
         )
 
     @staticmethod
-    def depthwise_conv(
+    def depthwise_conv(  # noqa: PLR0913
         i: int,
         o: int,
-        kernel_size: Tuple[int, int],
+        kernel_size: tuple[int, int],
         stride: int = 1,
-        padding: Tuple[int, int] = (0, 0),
-        bias: bool = False,
+        padding: tuple[int, int] = (0, 0),
+        bias: bool = False,  # noqa: FBT001, FBT002
         *,
         rngs: nnx.Rngs,
     ) -> nnx.Conv:
-        return nnx.Conv(
-            i, o, kernel_size, stride, padding=padding, use_bias=bias, rngs=rngs
-        )
+        return nnx.Conv(i, o, kernel_size, stride, padding=padding, use_bias=bias, rngs=rngs)
 
     def __call__(self, x: Array) -> Array:
         if self.stride == 1:
@@ -117,16 +113,14 @@ class InvertedResidual(nnx.Module):
         else:
             out = jnp.concat([self.branch1(x), self.branch2(x)], axis=3)
 
-        out = channel_shuffle(out, 2)
-
-        return out
+        return channel_shuffle(out, 2)
 
 
 class ShuffleNetV2(nnx.Module):
     def __init__(
         self,
-        stages_repeats: List[int],
-        stages_out_channels: List[int],
+        stages_repeats: list[int],
+        stages_out_channels: list[int],
         num_classes: int = 1000,
         inverted_residual: Callable[..., nnx.Module] = InvertedResidual,
         *,
@@ -134,10 +128,12 @@ class ShuffleNetV2(nnx.Module):
     ) -> None:
         super().__init__()
 
-        if len(stages_repeats) != 3:
-            raise ValueError("expected stages_repeats as list of 3 positive ints")
-        if len(stages_out_channels) != 5:
-            raise ValueError("expected stages_out_channels as list of 5 positive ints")
+        if len(stages_repeats) != 3:  # noqa: PLR2004
+            msg = "expected stages_repeats as list of 3 positive ints"
+            raise ValueError(msg)
+        if len(stages_out_channels) != 5:  # noqa: PLR2004
+            msg = "expected stages_out_channels as list of 5 positive ints"
+            raise ValueError(msg)
         self._stage_out_channels = stages_out_channels
 
         input_channels = 3
@@ -157,20 +153,18 @@ class ShuffleNetV2(nnx.Module):
         )
         input_channels = output_channels
 
-        self.maxpool = partial(
-            nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"
-        )
+        self.maxpool = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
         # Static annotations for mypy
         self.stage2: nnx.Sequential
         self.stage3: nnx.Sequential
         self.stage4: nnx.Sequential
         stage_names = [f"stage{i}" for i in [2, 3, 4]]
         for name, repeats, output_channels in zip(
-            stage_names, stages_repeats, self._stage_out_channels[1:]
+            stage_names, stages_repeats, self._stage_out_channels[1:], strict=False
         ):
             seq = [inverted_residual(input_channels, output_channels, 2, rngs=rngs)]
-            for i in range(repeats - 1):
-                seq.append(
+            for _i in range(repeats - 1):
+                seq.append(  # noqa: PERF401
                     inverted_residual(output_channels, output_channels, 1, rngs=rngs)
                 )
             setattr(self, name, nnx.Sequential(*seq))
@@ -194,20 +188,18 @@ class ShuffleNetV2(nnx.Module):
         self.fc = nnx.Linear(output_channels, num_classes, rngs=rngs)
 
     def __call__(self, x: Array) -> Array:
-        x=self.conv1(x)
-        x=self.maxpool(x)
-        x=self.stage2(x)
-        x=self.stage3(x)
-        x=self.stage4(x)
-        x=self.conv5(x)
-        x=jnp.mean(x, axis=(1, 2))
-        x=self.fc(x)
-        return x
+        x = self.conv1(x)
+        x = self.maxpool(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
+        x = self.stage4(x)
+        x = self.conv5(x)
+        x = jnp.mean(x, axis=(1, 2))
+        return self.fc(x)
 
 
 def _shufflenetv2(*, rngs: nnx.Rngs, **kwargs) -> ShuffleNetV2:
-    model = ShuffleNetV2(rngs=rngs, **kwargs)
-    return model
+    return ShuffleNetV2(rngs=rngs, **kwargs)
 
 
 def shufflenet_v2_x0_5(*, rngs: nnx.Rngs, **kwargs):

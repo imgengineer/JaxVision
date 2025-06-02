@@ -1,22 +1,23 @@
-from flax import nnx
-from typing import Optional, Union, Tuple, Callable, List
-from jax import Array
+from collections.abc import Callable
+
 import jax.numpy as jnp
+from flax import nnx
+from jax import Array
 
 
 class Conv2dNormActivation(nnx.Sequential):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         in_channels: int,
         out_channels,
         kernel_size: int = 3,
         stride: int = 1,
-        padding: Optional[Union[int, Tuple[int, int], str]] = None,
+        padding: int | tuple[int, int] | str | None = None,
         groups: int = 1,
-        norm_layer: Optional[Callable[..., nnx.Module]] = nnx.BatchNorm,
-        activation_layer: Optional[Callable[..., nnx.Module]] = nnx.relu,
-        dilation: Union[int, Tuple[int, ...]] = 1,
-        bias: Optional[bool] = None,
+        norm_layer: Callable[..., nnx.Module] | None = nnx.BatchNorm,
+        activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
+        dilation: int | tuple[int, ...] = 1,
+        bias: bool | None = None,
         conv_layer: Callable[..., nnx.Module] = nnx.Conv,
         *,
         rngs: nnx.Rngs,
@@ -61,7 +62,8 @@ class SqueezeExtraction(nnx.Module):
         squeeze_channels (int): Number of squeeze channels
         activation (Callable[..., torch.nn.Module], optional): ``delta`` activation. Default: ``torch.nn.ReLU``
         scale_activation (Callable[..., torch.nn.Module]): ``sigma`` activation. Default: ``torch.nn.Sigmoid``
-    """
+
+    """  # noqa: D404
 
     def __init__(
         self,
@@ -73,29 +75,26 @@ class SqueezeExtraction(nnx.Module):
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
-        self.fc1 = nnx.Conv(
-            input_channels, squeeze_channels, kernel_size=(1, 1), rngs=rngs
-        )
-        self.fc2 = nnx.Conv(
-            squeeze_channels, input_channels, kernel_size=(1, 1), rngs=rngs
-        )
+        self.fc1 = nnx.Conv(input_channels, squeeze_channels, kernel_size=(1, 1), rngs=rngs)
+        self.fc2 = nnx.Conv(squeeze_channels, input_channels, kernel_size=(1, 1), rngs=rngs)
         self.activation = activation
         self.scale_activation = scale_activation
 
-    def _scale(self, input: Array) -> Array:
+    def _scale(self, input: Array) -> Array:  # noqa: A002
         scale = jnp.mean(input, axis=(1, 2), keepdims=True)
         scale = self.fc1(scale)
         scale = self.activation(scale)
         scale = self.fc2(scale)
         return self.scale_activation(scale)
 
-    def __call__(self, input: Array) -> Array:
+    def __call__(self, input: Array) -> Array:  # noqa: A002
         scale = self._scale(input)
         return scale * input
 
 
 class MLP(nnx.Sequential):
-    """This block implements the multi-layer perceptron (MLP) module.
+    """
+    This block implements the multi-layer perceptron (MLP) module.
 
     Args:
         in_channels (int): Number of channels of the input
@@ -106,15 +105,16 @@ class MLP(nnx.Sequential):
             Default is ``None``, which uses the respective default values of the ``activation_layer`` and Dropout layer.
         bias (bool): Whether to use bias in the linear layer. Default ``True``
         drop
-    """
 
-    def __init__(
+    """  # noqa: D404
+
+    def __init__(  # noqa: PLR0913
         self,
         in_channels: int,
-        hidden_channels: List[int],
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
-        activation_layer: Optional[Callable[..., nnx.Module]] = nnx.relu,
-        bias: bool = False,
+        hidden_channels: list[int],
+        norm_layer: Callable[..., nnx.Module] | None = None,
+        activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
+        bias: bool = False,  # noqa: FBT001, FBT002
         dropout: float = 0.0,
         *,
         rngs: nnx.Rngs,
@@ -132,3 +132,12 @@ class MLP(nnx.Sequential):
         layers.append(nnx.Dropout(rate=dropout, rngs=rngs))
 
         super().__init__(*layers)
+
+
+class Permute(nnx.Module):
+    def __init__(self, dims: tuple[int, ...]):
+        super().__init__()
+        self.dims = dims
+
+    def __call__(self, input: Array) -> Array:  # noqa: A002
+        return input.transpose(self.dims)

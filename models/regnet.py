@@ -1,12 +1,14 @@
 import math
+from collections.abc import Callable
 from functools import partial
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any
 
 import jax.numpy as jnp
-from jax import Array
 from flax import nnx
+from jax import Array
 
 from ops.misc import Conv2dNormActivation, SqueezeExtraction
+
 from ._utils import _make_divisible
 
 
@@ -36,7 +38,7 @@ class SimpleStemIN(Conv2dNormActivation):
 class BottleneckTransform(nnx.Sequential):
     """Bottleneck transformation: 1x1, 3x3 [+SE], 1x1"""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         width_in: int,
         width_out: int,
@@ -45,12 +47,12 @@ class BottleneckTransform(nnx.Sequential):
         activation_layer: Callable[..., nnx.Module],
         group_width: int,
         bottleneck_multiplier: float,
-        se_ratio: Optional[float],
+        se_ratio: float | None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        layers: List[nnx.Module] = []
-        w_b = int(round(width_out * bottleneck_multiplier))
+        layers: list[nnx.Module] = []
+        w_b = round(width_out * bottleneck_multiplier)
         g = w_b // group_width
 
         layers.append(
@@ -81,7 +83,7 @@ class BottleneckTransform(nnx.Sequential):
         if se_ratio:
             # The SE reduction ratio is defined with respect to the
             # beginning of the block
-            width_se_out = int(round(se_ratio * width_in))
+            width_se_out = round(se_ratio * width_in)
             layers.append(
                 SqueezeExtraction(
                     input_channels=w_b,
@@ -108,7 +110,7 @@ class BottleneckTransform(nnx.Sequential):
 class ResBottlenectBlock(nnx.Module):
     """Residual bottleneck block: x + F(x), F = bottlenect transform."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         width_in: int,
         width_out: int,
@@ -117,7 +119,7 @@ class ResBottlenectBlock(nnx.Module):
         activation_layer: Callable[..., nnx.Module],
         group_width: int = 1,
         bottleneck_multiplier: float = 1.0,
-        se_ratio: Optional[float] = None,
+        se_ratio: float | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
@@ -150,17 +152,14 @@ class ResBottlenectBlock(nnx.Module):
         self.activation = activation_layer
 
     def __call__(self, x: Array) -> Array:
-        if self.proj is not None:
-            x = self.proj(x) + self.f(x)
-        else:
-            x = x + self.f(x)
+        x = self.proj(x) + self.f(x) if self.proj is not None else x + self.f(x)
         return self.activation(x)
 
 
 class AnyStage(nnx.Sequential):
     """AnyNet stage (sequence of blocks w/ the sample output shape)."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         width_in: int,
         width_out: int,
@@ -171,12 +170,12 @@ class AnyStage(nnx.Sequential):
         activation_layer: Callable[..., nnx.Module],
         group_width: int,
         bottleneck_multiplier: float,
-        se_ratio: Optional[float] = None,
-        stage_index: int = 0,
+        se_ratio: float | None = None,
+        stage_index: int = 0,  # noqa: ARG002
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
         for i in range(depth):
             block = block_constructor(
                 width_in if i == 0 else width_out,
@@ -194,14 +193,14 @@ class AnyStage(nnx.Sequential):
 
 
 class BlockParams:
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        depths: List[int],
-        widths: List[int],
-        group_widths: List[int],
-        bottleneck_multipliers: List[float],
-        strides: List[int],
-        se_ratio: Optional[float] = None,
+        depths: list[int],
+        widths: list[int],
+        group_widths: list[int],
+        bottleneck_multipliers: list[float],
+        strides: list[int],
+        se_ratio: float | None = None,
     ) -> None:
         self.depths = depths
         self.widths = widths
@@ -211,7 +210,7 @@ class BlockParams:
         self.se_ratio = se_ratio
 
     @classmethod
-    def from_init_params(
+    def from_init_params(  # noqa: PLR0913
         cls,
         depth: int,
         w_0: int,
@@ -219,8 +218,8 @@ class BlockParams:
         w_m: float,
         group_width: int,
         bottleneck_multiplier: float = 1.0,
-        se_ratio: Optional[float] = None,
-        **kwargs: Any,
+        se_ratio: float | None = None,
+        **kwargs: Any,  # noqa: ARG003
     ) -> "BlockParams":
         """
         Programmatically compute all the per-block settings,
@@ -241,38 +240,33 @@ class BlockParams:
         taking into account the skip connection and the final 1x1 convolutions.
         We use the fact that the output width is constant within a stage.
         """
-
-        QUANT = 8
-        STRIDE = 2
+        QUANT = 8  # noqa: N806
+        STRIDE = 2  # noqa: N806
 
         if w_a < 0 or w_0 <= 0 or w_m <= 1 or w_0 % 8 != 0:
-            raise ValueError("Invalid RegNet settings")
+            msg = "Invalid RegNet settings"
+            raise ValueError(msg)
         # Compute the block widths. Each stage has one unique block width
         widths_cont = jnp.arange(depth) * w_a + w_0
         block_capacity = jnp.round(jnp.log(widths_cont / w_0) / math.log(w_m))
         block_widths = (
-            (jnp.round(jnp.divide(w_0 * jnp.pow(w_m, block_capacity), QUANT)) * QUANT)
-            .astype(jnp.int32)
-            .tolist()
+            (jnp.round(jnp.divide(w_0 * jnp.pow(w_m, block_capacity), QUANT)) * QUANT).astype(jnp.int32).tolist()
         )
 
         num_stages = len(set(block_widths))
 
         # Convert to per stage paramsters
         split_helper = zip(
-            block_widths + [0],
-            [0] + block_widths,
-            block_widths + [0],
-            [0] + block_widths,
+            [*block_widths, 0],
+            [0, *block_widths],
+            [*block_widths, 0],
+            [0, *block_widths],
+            strict=False,
         )
         splits = [w != wp or r != rp for w, wp, r, rp in split_helper]
 
-        stage_widths = [w for w, t in zip(block_widths, splits[:-1]) if t]
-        stage_depths = (
-            jnp.diff(jnp.array([d for d, t in enumerate(splits) if t]))
-            .astype(jnp.int32)
-            .tolist()
-        )
+        stage_widths = [w for w, t in zip(block_widths, splits[:-1], strict=False) if t]
+        stage_depths = jnp.diff(jnp.array([d for d, t in enumerate(splits) if t])).astype(jnp.int32).tolist()
 
         strides = [STRIDE] * num_stages
         bottleneck_multipliers = [bottleneck_multiplier] * num_stages
@@ -299,39 +293,39 @@ class BlockParams:
             self.depths,
             self.group_widths,
             self.bottleneck_multipliers,
+            strict=False,
         )
 
     @staticmethod
     def _adjust_widths_groups_compatibility(
-        stage_widths: List[int],
-        bottleneck_ratios: List[float],
-        group_widths: List[int],
-    ) -> Tuple[List[int], List[int]]:
-        """Adjust the compatibility of widths and groups,
+        stage_widths: list[int],
+        bottleneck_ratios: list[float],
+        group_widths: list[int],
+    ) -> tuple[list[int], list[int]]:
+        """
+        Adjust the compatibility of widths and groups,
         depending on the bottleneck ratio.
         """
         # Compute all widths for the current settings
-        widths = [int(w * b) for w, b in zip(stage_widths, bottleneck_ratios)]
-        group_widths_min = [min(g, w_bot) for g, w_bot in zip(group_widths, widths)]
+        widths = [int(w * b) for w, b in zip(stage_widths, bottleneck_ratios, strict=False)]
+        group_widths_min = [min(g, w_bot) for g, w_bot in zip(group_widths, widths, strict=False)]
 
         # Compute the adjusted widths so that stage and group widths fit
-        ws_bot = [
-            _make_divisible(w_bot, g) for w_bot, g in zip(widths, group_widths_min)
-        ]
-        stage_widths = [int(w_bot / b) for w_bot, b in zip(ws_bot, bottleneck_ratios)]
+        ws_bot = [_make_divisible(w_bot, g) for w_bot, g in zip(widths, group_widths_min, strict=False)]
+        stage_widths = [int(w_bot / b) for w_bot, b in zip(ws_bot, bottleneck_ratios, strict=False)]
         return stage_widths, group_widths_min
 
 
 class RegNet(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         block_params: BlockParams,
         num_classes: int = 1000,
         stem_width: int = 32,
-        stem_type: Optional[Callable[..., nnx.Module]] = None,
-        block_type: Optional[Callable[..., nnx.Module]] = None,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
-        activation: Optional[Callable[..., nnx.Module]] = None,
+        stem_type: Callable[..., nnx.Module] | None = None,
+        block_type: Callable[..., nnx.Module] | None = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
+        activation: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
@@ -364,7 +358,7 @@ class RegNet(nnx.Module):
             depth,
             group_width,
             bottleneck_multiplier,
-        ) in enumerate(block_params._get_expanded_params()):
+        ) in enumerate(block_params._get_expanded_params()):  # noqa: SLF001
             blocks.append(
                 AnyStage(
                     current_width,
@@ -392,20 +386,15 @@ class RegNet(nnx.Module):
         x = self.trunk_output(x)
 
         x = jnp.mean(x, axis=(1, 2))
-        x = self.fc(x)
-
-        return x
+        return self.fc(x)
 
 
 def _regnet(block_params: BlockParams, *, rngs: nnx.Rngs, **kwargs):
-    norm_layer = kwargs.pop(
-        "norm_layer", partial(nnx.BatchNorm, epsilon=1e-05, momentum=0.1)
-    )
-    model = RegNet(block_params, norm_layer=norm_layer, rngs=rngs, **kwargs)
-    return model
+    norm_layer = kwargs.pop("norm_layer", partial(nnx.BatchNorm, epsilon=1e-05, momentum=0.1))
+    return RegNet(block_params, norm_layer=norm_layer, rngs=rngs, **kwargs)
 
 
-def regnet_y_400mf(
+def regnet_y_400mf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -426,14 +415,13 @@ def regnet_y_400mf(
 
     .. autoclass:: torchvision.models.RegNet_Y_400MF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=16, w_0=48, w_a=27.89, w_m=2.09, group_width=8, se_ratio=0.25, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=16, w_0=48, w_a=27.89, w_m=2.09, group_width=8, se_ratio=0.25, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_800mf(
+def regnet_y_800mf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -454,15 +442,13 @@ def regnet_y_800mf(
 
     .. autoclass:: torchvision.models.RegNet_Y_800MF_Weights
         :members:
-    """
 
-    params = BlockParams.from_init_params(
-        depth=14, w_0=56, w_a=38.84, w_m=2.4, group_width=16, se_ratio=0.25, **kwargs
-    )
+    """
+    params = BlockParams.from_init_params(depth=14, w_0=56, w_a=38.84, w_m=2.4, group_width=16, se_ratio=0.25, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_1_6gf(
+def regnet_y_1_6gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -483,15 +469,15 @@ def regnet_y_1_6gf(
 
     .. autoclass:: torchvision.models.RegNet_Y_1_6GF_Weights
         :members:
-    """
 
+    """
     params = BlockParams.from_init_params(
         depth=27, w_0=48, w_a=20.71, w_m=2.65, group_width=24, se_ratio=0.25, **kwargs
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_3_2gf(
+def regnet_y_3_2gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -512,15 +498,15 @@ def regnet_y_3_2gf(
 
     .. autoclass:: torchvision.models.RegNet_Y_3_2GF_Weights
         :members:
-    """
 
+    """
     params = BlockParams.from_init_params(
         depth=21, w_0=80, w_a=42.63, w_m=2.66, group_width=24, se_ratio=0.25, **kwargs
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_8gf(
+def regnet_y_8gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -541,6 +527,7 @@ def regnet_y_8gf(
 
     .. autoclass:: torchvision.models.RegNet_Y_8GF_Weights
         :members:
+
     """
     params = BlockParams.from_init_params(
         depth=17, w_0=192, w_a=76.82, w_m=2.19, group_width=56, se_ratio=0.25, **kwargs
@@ -548,7 +535,7 @@ def regnet_y_8gf(
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_16gf(
+def regnet_y_16gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -569,8 +556,8 @@ def regnet_y_16gf(
 
     .. autoclass:: torchvision.models.RegNet_Y_16GF_Weights
         :members:
-    """
 
+    """
     params = BlockParams.from_init_params(
         depth=18,
         w_0=200,
@@ -583,7 +570,7 @@ def regnet_y_16gf(
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_32gf(
+def regnet_y_32gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -604,8 +591,8 @@ def regnet_y_32gf(
 
     .. autoclass:: torchvision.models.RegNet_Y_32GF_Weights
         :members:
-    """
 
+    """
     params = BlockParams.from_init_params(
         depth=20,
         w_0=232,
@@ -618,7 +605,7 @@ def regnet_y_32gf(
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_128gf(
+def regnet_y_128gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -639,8 +626,8 @@ def regnet_y_128gf(
 
     .. autoclass:: torchvision.models.RegNet_Y_128GF_Weights
         :members:
-    """
 
+    """
     params = BlockParams.from_init_params(
         depth=27,
         w_0=456,
@@ -653,7 +640,7 @@ def regnet_y_128gf(
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_400mf(
+def regnet_x_400mf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -674,14 +661,13 @@ def regnet_x_400mf(
 
     .. autoclass:: torchvision.models.RegNet_X_400MF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=22, w_0=24, w_a=24.48, w_m=2.54, group_width=16, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=22, w_0=24, w_a=24.48, w_m=2.54, group_width=16, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_800mf(
+def regnet_x_800mf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -702,14 +688,13 @@ def regnet_x_800mf(
 
     .. autoclass:: torchvision.models.RegNet_X_800MF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=16, w_0=56, w_a=35.73, w_m=2.28, group_width=16, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=16, w_0=56, w_a=35.73, w_m=2.28, group_width=16, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_1_6gf(
+def regnet_x_1_6gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -730,15 +715,13 @@ def regnet_x_1_6gf(
 
     .. autoclass:: torchvision.models.RegNet_X_1_6GF_Weights
         :members:
-    """
 
-    params = BlockParams.from_init_params(
-        depth=18, w_0=80, w_a=34.01, w_m=2.25, group_width=24, **kwargs
-    )
+    """
+    params = BlockParams.from_init_params(depth=18, w_0=80, w_a=34.01, w_m=2.25, group_width=24, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_3_2gf(
+def regnet_x_3_2gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -759,14 +742,13 @@ def regnet_x_3_2gf(
 
     .. autoclass:: torchvision.models.RegNet_X_3_2GF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=25, w_0=88, w_a=26.31, w_m=2.25, group_width=48, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=25, w_0=88, w_a=26.31, w_m=2.25, group_width=48, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_8gf(
+def regnet_x_8gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -787,14 +769,13 @@ def regnet_x_8gf(
 
     .. autoclass:: torchvision.models.RegNet_X_8GF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=23, w_0=80, w_a=49.56, w_m=2.88, group_width=120, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=23, w_0=80, w_a=49.56, w_m=2.88, group_width=120, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_16gf(
+def regnet_x_16gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -815,14 +796,13 @@ def regnet_x_16gf(
 
     .. autoclass:: torchvision.models.RegNet_X_16GF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=22, w_0=216, w_a=55.59, w_m=2.1, group_width=128, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=22, w_0=216, w_a=55.59, w_m=2.1, group_width=128, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_32gf(
+def regnet_x_32gf(  # noqa: D417
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -843,8 +823,7 @@ def regnet_x_32gf(
 
     .. autoclass:: torchvision.models.RegNet_X_32GF_Weights
         :members:
+
     """
-    params = BlockParams.from_init_params(
-        depth=23, w_0=320, w_a=69.86, w_m=2.0, group_width=168, **kwargs
-    )
+    params = BlockParams.from_init_params(depth=23, w_0=320, w_a=69.86, w_m=2.0, group_width=168, **kwargs)
     return _regnet(params, rngs=rngs, **kwargs)

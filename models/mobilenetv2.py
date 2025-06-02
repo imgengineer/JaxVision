@@ -1,34 +1,38 @@
-from typing import Callable, List, Optional
+from collections.abc import Callable
+
 import jax.numpy as jnp
-from jax import Array
 from flax import nnx
+from jax import Array
+
 from ops.misc import Conv2dNormActivation
+
 from ._utils import _make_divisible
 
 
 class InvertedResidual(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         inp: int,
         oup: int,
         stride: int,
         expand_ratio: int,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
         self.stride = stride
         if stride not in [1, 2]:
-            raise ValueError(f"stride shoule be 1 or 2 instead {stride}")
+            msg = f"stride shoule be 1 or 2 instead {stride}"
+            raise ValueError(msg)
 
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
 
-        hidden_dim = int(round(inp * expand_ratio))
+        hidden_dim = round(inp * expand_ratio)
         self.use_res_connect = self.stride == 1 and inp == oup
 
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
         if expand_ratio != 1:
             # pw
             layers.append(
@@ -73,19 +77,18 @@ class InvertedResidual(nnx.Module):
     def __call__(self, x: Array) -> Array:
         if self.use_res_connect:
             return x + self.conv(x)
-        else:
-            return self.conv(x)
+        return self.conv(x)
 
 
 class MobileNetV2(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: D417, PLR0913
         self,
         num_classes: int = 1000,
         width_mult: float = 1.0,
-        inverted_residual_setting: Optional[List[List[int]]] = None,
+        inverted_residual_setting: list[list[int]] | None = None,
         round_nearest: int = 8,
-        block: Optional[Callable[..., nnx.Module]] = None,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        block: Callable[..., nnx.Module] | None = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
         dropout: float = 0.2,
         *,
         rngs: nnx.Rngs,
@@ -129,19 +132,15 @@ class MobileNetV2(nnx.Module):
 
         # only check the first element, assuming user known t, c, n, s are required
         if (
-            len(inverted_residual_setting) == 0
-            or len(inverted_residual_setting[0]) != 4
+            len(inverted_residual_setting) == 0 or len(inverted_residual_setting[0]) != 4  # noqa: PLR2004
         ):
-            raise ValueError(
-                f"inveted_residual_setting should be non-empty or a 4-element list, got {inverted_residual_setting}"
-            )
+            msg = f"inveted_residual_setting should be non-empty or a 4-element list, got {inverted_residual_setting}"
+            raise ValueError(msg)
 
         # building first layer
         input_channel = _make_divisible(input_channel * width_mult, round_nearest)
-        self.last_channel = _make_divisible(
-            last_channel * max(1.0, width_mult), round_nearest
-        )
-        features: List[nnx.Module] = [
+        self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
+        features: list[nnx.Module] = [
             Conv2dNormActivation(
                 3,
                 input_channel,
@@ -192,11 +191,8 @@ class MobileNetV2(nnx.Module):
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = jnp.mean(x, axis=(1, 2))
-        x = self.classifier(x)
-        return x
+        return self.classifier(x)
 
 
 def mobilenet_v2(*, rngs: nnx.Rngs, **kwargs) -> MobileNetV2:
-    model = MobileNetV2(rngs=rngs, **kwargs)
-
-    return model
+    return MobileNetV2(rngs=rngs, **kwargs)

@@ -1,22 +1,26 @@
+from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any, Callable, List, Optional, Sequence
+from typing import Any
 
 import jax.numpy as jnp
-from jax import Array
 from flax import nnx
-from ops.misc import Conv2dNormActivation, SqueezeExtraction as SElayer
+from jax import Array
+
+from ops.misc import Conv2dNormActivation
+from ops.misc import SqueezeExtraction as SElayer
+
 from ._utils import _make_divisible
 
 
 class InvertedResidualConfig:
     # Stores information listed at Table 1 and 2 of the MobileNetV3 paper
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         input_channels: int,
         kernel: int,
         expanded_channels: int,
         out_channels: int,
-        use_se: bool,
+        use_se: bool,  # noqa: FBT001
         activation: str,
         stride: int,
         dilation: int,
@@ -42,21 +46,18 @@ class InvertResidual(nnx.Module):
         self,
         cnf: InvertedResidualConfig,
         norm_layer: Callable[..., nnx.Module],
-        se_layer: Callable[..., nnx.Module] = partial(
-            SElayer, scale_activation=nnx.hard_sigmoid
-        ),
+        se_layer: Callable[..., nnx.Module] = partial(SElayer, scale_activation=nnx.hard_sigmoid),  # noqa: B008
         *,
         rngs: nnx.Rngs,
     ):
         super().__init__()
-        if not (1 <= cnf.stride <= 2):
-            raise ValueError("illegal stride value")
+        if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
+            msg = "illegal stride value"
+            raise ValueError(msg)
 
-        self.use_res_connect = (
-            cnf.stride == 1 and cnf.input_channels == cnf.out_channels
-        )
+        self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
 
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
         activation_layer = nnx.hard_sigmoid if cnf.use_hs else nnx.relu
 
         # expand
@@ -106,7 +107,7 @@ class InvertResidual(nnx.Module):
         self.out_channels = cnf.out_channels
         self._is_cn = cnf.stride > 1
 
-    def __call__(self, input: Array) -> Array:
+    def __call__(self, input: Array) -> Array:  # noqa: A002
         result = self.block(input)
         if self.use_res_connect:
             result += input
@@ -114,13 +115,13 @@ class InvertResidual(nnx.Module):
 
 
 class MobileNetV3(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: D417, PLR0913
         self,
-        inverted_residual_setting: List[InvertedResidualConfig],
+        inverted_residual_setting: list[InvertedResidualConfig],
         last_channel: int,
         num_classes: int = 1000,
-        block: Optional[Callable[..., nnx.Module]] = None,
-        norm_layer: Optional[Callable[..., nnx.Module]] = None,
+        block: Callable[..., nnx.Module] | None = None,
+        norm_layer: Callable[..., nnx.Module] | None = None,
         dropout: float = 0.2,
         *,
         rngs: nnx.Rngs,
@@ -135,24 +136,19 @@ class MobileNetV3(nnx.Module):
             block (Optional[Callable[..., nn.Module]]): Module specifying inverted residual building block for mobilenet
             norm_layer (Optional[Callable[..., nn.Module]]): Module specifying the normalization layer to use
             dropout (float): The droupout probability
-        """
 
+        """
         super().__init__()
 
         if not inverted_residual_setting:
-            raise ValueError("The inverted_residual_setting should not be empty")
-        elif not (
+            msg = "The inverted_residual_setting should not be empty"
+            raise ValueError(msg)
+        if not (
             isinstance(inverted_residual_setting, Sequence)
-            and all(
-                [
-                    isinstance(s, InvertedResidualConfig)
-                    for s in inverted_residual_setting
-                ]
-            )
+            and all(isinstance(s, InvertedResidualConfig) for s in inverted_residual_setting)
         ):
-            raise TypeError(
-                "The inverted_residual_setting should be List[InvertedResidualConfig]"
-            )
+            msg = "The inverted_residual_setting should be List[InvertedResidualConfig]"
+            raise TypeError(msg)
 
         if block is None:
             block = InvertResidual
@@ -160,7 +156,7 @@ class MobileNetV3(nnx.Module):
         if norm_layer is None:
             norm_layer = partial(nnx.BatchNorm, epsilon=0.001, momentum=0.01)
 
-        layers: List[nnx.Module] = []
+        layers: list[nnx.Module] = []
 
         # building first layer
         firstconv_output_channels = inverted_residual_setting[0].input_channels
@@ -178,7 +174,7 @@ class MobileNetV3(nnx.Module):
 
         # building inverted residual blocks
         for cnf in inverted_residual_setting:
-            layers.append(block(cnf, norm_layer, rngs=rngs))
+            layers.append(block(cnf, norm_layer, rngs=rngs))  # noqa: PERF401
 
         # building last several layers
         lastconv_input_channels = inverted_residual_setting[-1].out_channels
@@ -205,49 +201,52 @@ class MobileNetV3(nnx.Module):
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = jnp.mean(x, axis=(1, 2))
-        x = self.classifier(x)
-
-        return x
+        return self.classifier(x)
 
 
 def _mobilenet_v3_conf(
     arch: str,
     width_mult: float = 1.0,
-    reduced_tail: bool = False,
-    dilated: bool = False,
-    **kwargs: Any,
+    reduced_tail: bool = False,  # noqa: FBT001, FBT002
+    dilated: bool = False,  # noqa: FBT001, FBT002
+    **kwargs: Any,  # noqa: ARG001
 ):
     reduce_divider = 2 if reduced_tail else 1
     dilation = 2 if dilated else 1
 
     bneck_conf = partial(InvertedResidualConfig, width_mult=width_mult)
-    adjust_channels = partial(
-        InvertedResidualConfig.adjust_channels, width_mult=width_mult
-    )
+    adjust_channels = partial(InvertedResidualConfig.adjust_channels, width_mult=width_mult)
 
     if arch == "mobilenet_v3_large":
         inverted_residual_setting = [
-            bneck_conf(16, 3, 16, 16, False, "RE", 1, 1),
-            bneck_conf(16, 3, 64, 24, False, "RE", 2, 1),  # C1
-            bneck_conf(24, 3, 72, 24, False, "RE", 1, 1),
-            bneck_conf(24, 5, 72, 40, True, "RE", 2, 1),  # C2
-            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),
-            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),
-            bneck_conf(40, 3, 240, 80, False, "HS", 2, 1),  # C3
-            bneck_conf(80, 3, 200, 80, False, "HS", 1, 1),
-            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),
-            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),
-            bneck_conf(80, 3, 480, 112, True, "HS", 1, 1),
-            bneck_conf(112, 3, 672, 112, True, "HS", 1, 1),
+            bneck_conf(16, 3, 16, 16, False, "RE", 1, 1),  # noqa: FBT003
+            bneck_conf(16, 3, 64, 24, False, "RE", 2, 1),  # C1  # noqa: FBT003
+            bneck_conf(24, 3, 72, 24, False, "RE", 1, 1),  # noqa: FBT003
+            bneck_conf(24, 5, 72, 40, True, "RE", 2, 1),  # C2  # noqa: FBT003
+            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),  # noqa: FBT003
+            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),  # noqa: FBT003
+            bneck_conf(40, 3, 240, 80, False, "HS", 2, 1),  # C3  # noqa: FBT003
+            bneck_conf(80, 3, 200, 80, False, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(80, 3, 480, 112, True, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(112, 3, 672, 112, True, "HS", 1, 1),  # noqa: FBT003
             bneck_conf(
-                112, 5, 672, 160 // reduce_divider, True, "HS", 2, dilation
+                112,
+                5,
+                672,
+                160 // reduce_divider,
+                True,  # noqa: FBT003
+                "HS",
+                2,
+                dilation,
             ),  # C4
             bneck_conf(
                 160 // reduce_divider,
                 5,
                 960 // reduce_divider,
                 160 // reduce_divider,
-                True,
+                True,  # noqa: FBT003
                 "HS",
                 1,
                 dilation,
@@ -257,7 +256,7 @@ def _mobilenet_v3_conf(
                 5,
                 960 // reduce_divider,
                 160 // reduce_divider,
-                True,
+                True,  # noqa: FBT003
                 "HS",
                 1,
                 dilation,
@@ -266,21 +265,21 @@ def _mobilenet_v3_conf(
         last_channel = adjust_channels(1280 // reduce_divider)  # C5
     elif arch == "mobilenet_v3_small":
         inverted_residual_setting = [
-            bneck_conf(16, 3, 16, 16, True, "RE", 2, 1),  # C1
-            bneck_conf(16, 3, 72, 24, False, "RE", 2, 1),  # C2
-            bneck_conf(24, 3, 88, 24, False, "RE", 1, 1),
-            bneck_conf(24, 5, 96, 40, True, "HS", 2, 1),  # C3
-            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),
-            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),
-            bneck_conf(40, 5, 120, 48, True, "HS", 1, 1),
-            bneck_conf(48, 5, 144, 48, True, "HS", 1, 1),
-            bneck_conf(48, 5, 288, 96 // reduce_divider, True, "HS", 2, dilation),  # C4
+            bneck_conf(16, 3, 16, 16, True, "RE", 2, 1),  # C1  # noqa: FBT003
+            bneck_conf(16, 3, 72, 24, False, "RE", 2, 1),  # C2  # noqa: FBT003
+            bneck_conf(24, 3, 88, 24, False, "RE", 1, 1),  # noqa: FBT003
+            bneck_conf(24, 5, 96, 40, True, "HS", 2, 1),  # C3  # noqa: FBT003
+            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(40, 5, 120, 48, True, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(48, 5, 144, 48, True, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(48, 5, 288, 96 // reduce_divider, True, "HS", 2, dilation),  # C4  # noqa: FBT003
             bneck_conf(
                 96 // reduce_divider,
                 5,
                 576 // reduce_divider,
                 96 // reduce_divider,
-                True,
+                True,  # noqa: FBT003
                 "HS",
                 1,
                 dilation,
@@ -290,7 +289,7 @@ def _mobilenet_v3_conf(
                 5,
                 576 // reduce_divider,
                 96 // reduce_divider,
-                True,
+                True,  # noqa: FBT003
                 "HS",
                 1,
                 dilation,
@@ -298,31 +297,27 @@ def _mobilenet_v3_conf(
         ]
         last_channel = adjust_channels(1024 // reduce_divider)  # C5
     else:
-        raise ValueError(f"Unsupported model type {arch}")
+        msg = f"Unsupported model type {arch}"
+        raise ValueError(msg)
 
     return inverted_residual_setting, last_channel
 
 
 def _mobilenet_v3(
-    inverted_residual_setting: List[InvertedResidualConfig],
+    inverted_residual_setting: list[InvertedResidualConfig],
     last_channel: int,
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> MobileNetV3:
-    model = MobileNetV3(inverted_residual_setting, last_channel, rngs=rngs, **kwargs)
-    return model
+    return MobileNetV3(inverted_residual_setting, last_channel, rngs=rngs, **kwargs)
 
 
 def mobilenet_v3_large(*, rngs: nnx.Rngs, **kwargs) -> MobileNetV3:
-    inverted_residual_setting, last_channel = _mobilenet_v3_conf(
-        "mobilenet_v3_large", **kwargs
-    )
+    inverted_residual_setting, last_channel = _mobilenet_v3_conf("mobilenet_v3_large", **kwargs)
     return _mobilenet_v3(inverted_residual_setting, last_channel, rngs=rngs, **kwargs)
 
 
 def mobilenet_v3_small(*, rngs: nnx.Rngs, **kwargs) -> MobileNetV3:
-    inverted_residual_setting, last_channel = _mobilenet_v3_conf(
-        "mobilenet_v3_small", **kwargs
-    )
+    inverted_residual_setting, last_channel = _mobilenet_v3_conf("mobilenet_v3_small", **kwargs)
     return _mobilenet_v3(inverted_residual_setting, last_channel, rngs=rngs, **kwargs)

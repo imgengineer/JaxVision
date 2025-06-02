@@ -1,19 +1,20 @@
-from flax import nnx
-import jax
-from jax import Array
-import jax.numpy as jnp
-from jax.image import ResizeMethod
+from collections.abc import Callable
 from functools import partial
-from typing import Optional, Callable, List, Tuple
+
+import jax
+import jax.numpy as jnp
+from flax import nnx
+from jax import Array
+from jax.image import ResizeMethod
 
 
 class GoogLeNet(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         num_classes: int = 1000,
-        aux_logits: bool = True,
-        transform_input: bool = False,
-        blocks: Optional[List[Callable[..., nnx.Module]]] = None,
+        aux_logits: bool = True,  # noqa: FBT001, FBT002
+        transform_input: bool = False,  # noqa: FBT001, FBT002
+        blocks: list[Callable[..., nnx.Module]] | None = None,
         dropout: float = 0.2,
         dropout_aux: float = 0.7,
         *,
@@ -23,8 +24,9 @@ class GoogLeNet(nnx.Module):
         super().__init__()
         if blocks is None:
             blocks = [BasicConv2d, Inception, InceptionAux]
-        if len(blocks) != 3:
-            raise ValueError(f"blocks length should be 3 instead of {len(blocks)}")
+        if len(blocks) != 3:  # noqa: PLR2004
+            msg = f"blocks length should be 3 instead of {len(blocks)}"
+            raise ValueError(msg)
 
         conv_block = blocks[0]
         inception_block = blocks[1]
@@ -35,9 +37,7 @@ class GoogLeNet(nnx.Module):
         self.training = training
 
         # 基础卷积层
-        self.conv1 = conv_block(
-            3, 64, kernel_size=(7, 7), strides=(2, 2), padding="SAME", rngs=rngs
-        )
+        self.conv1 = conv_block(3, 64, kernel_size=(7, 7), strides=(2, 2), padding="SAME", rngs=rngs)
         self.conv2 = conv_block(64, 64, kernel_size=(1, 1), rngs=rngs)
         self.conv3 = conv_block(64, 192, kernel_size=(3, 3), padding="SAME", rngs=rngs)
 
@@ -58,12 +58,8 @@ class GoogLeNet(nnx.Module):
 
         # 辅助分类器
         if aux_logits:
-            self.aux1 = inception_aux_block(
-                512, num_classes, dropout=dropout_aux, rngs=rngs
-            )
-            self.aux2 = inception_aux_block(
-                528, num_classes, dropout=dropout_aux, rngs=rngs
-            )
+            self.aux1 = inception_aux_block(512, num_classes, dropout=dropout_aux, rngs=rngs)
+            self.aux2 = inception_aux_block(528, num_classes, dropout=dropout_aux, rngs=rngs)
         else:
             self.aux1 = None
             self.aux2 = None
@@ -72,19 +68,11 @@ class GoogLeNet(nnx.Module):
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         self.fc = nnx.Linear(1024, num_classes, rngs=rngs)
 
-        # 预定义的池化层（不需要参数）
-        self.maxpool1 = partial(
-            nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"
-        )
-        self.maxpool2 = partial(
-            nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"
-        )
-        self.maxpool3 = partial(
-            nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"
-        )
-        self.maxpool4 = partial(
-            nnx.max_pool, window_shape=(2, 2), strides=(2, 2), padding="SAME"
-        )
+        # 预定义的池化层（不需要参数）  # noqa: RUF003
+        self.maxpool1 = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
+        self.maxpool2 = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
+        self.maxpool3 = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
+        self.maxpool4 = partial(nnx.max_pool, window_shape=(2, 2), strides=(2, 2), padding="SAME")
 
     def _transform_input(self, x: Array) -> Array:
         if self.transform_input:
@@ -94,7 +82,7 @@ class GoogLeNet(nnx.Module):
             x = (x - mean) / std
         return x
 
-    def _forward(self, x: Array) -> Tuple[Array, Optional[Array], Optional[Array]]:
+    def _forward(self, x: Array) -> tuple[Array, Array | None, Array | None]:
         # Initial layers: N x 224 x 224 x 3 -> N x 28 x 28 x 192
         x = self.conv1(x)
         x = self.maxpool1(x)
@@ -142,12 +130,11 @@ class GoogLeNet(nnx.Module):
 
         if self.training and self.aux_logits:
             return x, aux2, aux1
-        else:
-            return x
+        return x
 
 
 class Inception(nnx.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         in_channels: int,
         ch1x1: int,
@@ -156,7 +143,7 @@ class Inception(nnx.Module):
         ch5x5red: int,
         ch5x5: int,
         pool_proj: int,
-        conv_block: Optional[Callable[..., nnx.Module]] = None,
+        conv_block: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
     ):
@@ -199,7 +186,7 @@ class InceptionAux(nnx.Module):
         self,
         in_channels: int,
         num_classes: int,
-        conv_block: Optional[Callable[..., nnx.Module]] = None,
+        conv_block: Callable[..., nnx.Module] | None = None,
         dropout: float = 0.7,
         *,
         rngs: nnx.Rngs,
@@ -215,26 +202,18 @@ class InceptionAux(nnx.Module):
 
     def __call__(self, x: Array) -> Array:
         # Adaptive average pooling to 4x4
-        x = jax.image.resize(
-            x, shape=(x.shape[0], 4, 4, x.shape[-1]), method=ResizeMethod.LINEAR
-        )
+        x = jax.image.resize(x, shape=(x.shape[0], 4, 4, x.shape[-1]), method=ResizeMethod.LINEAR)
         x = self.conv(x)
         x = x.reshape(x.shape[0], -1)
         x = nnx.relu(self.fc1(x))
         x = self.dropout(x)
-        x = self.fc2(x)
-
-        return x
+        return self.fc2(x)
 
 
 class BasicConv2d(nnx.Module):
-    def __init__(
-        self, in_channels: int, out_channels: int, *, rngs: nnx.Rngs, **kwargs
-    ):
+    def __init__(self, in_channels: int, out_channels: int, *, rngs: nnx.Rngs, **kwargs):
         super().__init__()
-        self.conv = nnx.Conv(
-            in_channels, out_channels, use_bias=False, rngs=rngs, **kwargs
-        )
+        self.conv = nnx.Conv(in_channels, out_channels, use_bias=False, rngs=rngs, **kwargs)
         self.bn = nnx.BatchNorm(out_channels, epsilon=0.001, rngs=rngs)
 
     def __call__(self, x: Array) -> Array:
