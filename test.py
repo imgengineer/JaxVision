@@ -1,11 +1,13 @@
 import jax
 from flax import nnx
 from models.vision_transformer import vit_b_16
+import jax.numpy as jnp
 
-key = jax.random.PRNGKey(0)
-x = jax.random.normal(key, (1, 224, 224, 3))
-model = vit_b_16(
-    rngs=nnx.Rngs(0),
-    num_classes=10,
-)
-print(model(x).shape)
+rngs = nnx.Rngs(0)
+x = jax.random.normal(rngs.params(), (1, 224, 224, 3))
+print(x.transpose(1, 2, 3, 0).shape)
+# model = vit_b_16(
+#     rngs=rngs,
+#     num_classes=10,
+# )
+# print(model(x).shape)

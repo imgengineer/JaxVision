@@ -1,6 +1,5 @@
-import math
 from functools import partial
-from typing import Any, Callable, Dict, List, NamedTuple, Optional
+from typing import Callable, List, NamedTuple, Optional
 
 import jax
 from jax import Array
