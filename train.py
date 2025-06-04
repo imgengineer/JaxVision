@@ -10,9 +10,7 @@ import orbax.checkpoint as ocp
 import torch
 import torchvision
 from flax import nnx
-from jax.tree_util import tree_map
 from torch.utils.data import DataLoader
-from torch.utils.data.dataloader import default_collate
 from tqdm import tqdm
 
 from models.resnet import resnet18
@@ -43,8 +41,31 @@ def set_seed(seed):
 
 
 def numpy_collate(batch):
-    """Convert PyTorch tensors to numpy arrays for JAX"""
-    return tree_map(np.asarray, default_collate(batch))
+    """
+    Collates a batch of samples into a single array or nested list of arrays.
+
+    This function recursively processes a batch of samples, stacking NumPy arrays, and collating lists or tuples by grouping elements together. If the batch consists of NumPy arrays, they are stacked. If the batch contains tuples or lists, the function recursively applies the collation.
+
+    This collate function is taken from the `JAX tutorial with PyTorch Data Loading <https://jax.readthedocs.io/en/latest/notebooks/Neural_Network_and_Data_Loading.html>`_.
+
+    Parameters
+    ----------
+    batch : List[Union[np.ndarray, Tuple, List]]
+        A batch of samples where each sample is either a NumPy array, a tuple, or a list. It depends on the
+        data loader.
+
+    Returns
+    -------
+    np.ndarray
+        The collated batch, either as a stacked NumPy array or as a nested structure of arrays.
+
+    """
+    if isinstance(batch[0], np.ndarray):
+        return np.stack(batch)
+    if isinstance(batch[0], (tuple, list)):
+        transposed = zip(*batch, strict=False)
+        return [numpy_collate(samples) for samples in transposed]
+    return np.asarray(batch)
 
 
 def load_image(img_path):
