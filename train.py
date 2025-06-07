@@ -3,6 +3,7 @@ import random
 
 import albumentations as A  # noqa: N812
 import cv2
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import optax
@@ -84,9 +85,7 @@ def create_transforms(target_size, is_training=True):  # noqa: FBT002
     if is_training:
         transforms_list.extend(
             [
-                A.ColorJitter(
-                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.8
-                ),
+                A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.8),
                 A.HorizontalFlip(p=0.5),
                 A.VerticalFlip(p=0.5),
                 A.Rotate(limit=30, p=0.5),
@@ -187,26 +186,28 @@ def loss_fn(model, batch):
     """Calculate loss and logits"""
     images, labels = batch
     logits = model(images)
-    loss = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits, labels=labels
-    ).mean()
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
     return loss, logits
 
 
 @nnx.jit
 def train_step(model, optimizer, metrics, batch):
     """Single training step"""
+    # Convert numpy arrays to jnp.array on GPU
+    x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
     grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(model, batch)
-    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    (loss, logits), grads = grad_fn(model, (x, y_true))
+    metrics.update(loss=loss, logits=logits, labels=y_true)
     optimizer.update(grads)
 
 
 @nnx.jit
 def eval_step(model, metrics, batch):
     """Single evaluation step"""
-    loss, logits = loss_fn(model, batch)
-    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    # Convert numpy arrays to jnp.array on GPU
+    x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
+    loss, logits = loss_fn(model, (x, y_true))
+    metrics.update(loss=loss, logits=logits, labels=y_true)
 
 
 def train_epoch(model, optimizer, metrics, train_loader, epoch_num):
@@ -277,9 +278,7 @@ def plot_training_metrics(metrics_history):
     ax1.grid(True, alpha=0.3)  # noqa: FBT003
 
     # Plot accuracy
-    ax2.plot(
-        epochs, metrics_history["train_accuracy"], label="Train Accuracy", marker="o"
-    )
+    ax2.plot(epochs, metrics_history["train_accuracy"], label="Train Accuracy", marker="o")
     ax2.plot(epochs, metrics_history["val_accuracy"], label="Val Accuracy", marker="s")
     ax2.set_title("Training and Validation Accuracy")
     ax2.set_xlabel("Epoch")
@@ -356,9 +355,7 @@ def main():
         update_metrics_history(metrics_history, train_result, val_result)
 
         # Save best model
-        best_acc = save_best_model_if_improved(
-            model, val_result, best_acc, epoch, params["checkpoint_dir"]
-        )
+        best_acc = save_best_model_if_improved(model, val_result, best_acc, epoch, params["checkpoint_dir"])
 
     print("\n🎯 Training completed!")
     print(f"🏆 Best validation accuracy: {best_acc * 100:.6f}%")
