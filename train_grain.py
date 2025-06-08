@@ -1,15 +1,15 @@
+import csv
 import os
 import random
+from pathlib import Path
 
 import albumentations as A  # noqa: N812
 import cv2
 import grain
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
-import torch
 from flax import nnx
 from tqdm import tqdm
 
@@ -32,17 +32,12 @@ params = {
 
 def set_seed(seed):
     """Set random seeds for reproducibility"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)  # noqa: NPY002
     random.seed(seed)
 
 
-def load_image(img_path):
-    """Load image in RGB format"""
-    img = cv2.imread(img_path)
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+def get_image_extensions() -> tuple[str, ...]:
+    return (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp")
 
 
 def create_transforms(target_size, is_training=True) -> A.Compose:  # noqa: FBT002
@@ -149,59 +144,64 @@ class AlbumentationsTransform(grain.transforms.Map):
 
 
 class LoadImageMap(grain.transforms.Map):
+    """优化的图像加载器，增加错误处理"""  # noqa: RUF002
+
     def map(self, element: tuple[str, int]) -> tuple[np.ndarray, int]:
-        """Load image from path and return as numpy array with label"""
         img_path, label = element
-        img = cv2.imread(img_path)
-        if img is None:
-            msg = f"Image at {img_path} could not be loaded."
-            raise ValueError(msg)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return img, label
+
+        try:
+            img = cv2.imread(img_path)
+            if img is None:
+                msg = f"无法加载图像: {img_path}"
+                raise ValueError(msg)  # noqa: TRY301
+
+            # 检查图像是否损坏
+            if img.size == 0:
+                msg = f"图像为空: {img_path}"
+                raise ValueError(msg)  # noqa: TRY301
+
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            return img_rgb, label  # noqa: TRY300
+
+        except Exception as e:  # noqa: BLE001
+            print(f"警告: 跳过损坏的图像 {img_path}: {e}")
+            # 返回一个黑色图像作为占位符
+            placeholder = np.zeros((224, 224, 3), dtype=np.uint8)
+            return placeholder, label
 
 
-class CustomImageFolderDataSource:
+class ImageFolderDataSource:
     def __init__(self, root_dir: str):
-        self.root_dir = root_dir
-        self.samples: list[tuple[str, int]] = []  # 存储 (image_path, class_idx)
-        self.classes: list[str] = []  # 存储类别名称
+        self.root_dir = Path(root_dir)  # Use pathlib.Path
+        self.samples: list[tuple[str, int]] = []
+        self.classes: list[str] = []
+        self._load_samples()
 
-        # 这部分逻辑与 ImageFolder 的内部实现类似，用于遍历目录和映射类别  # noqa: RUF003
-        class_to_idx = {}
-        idx_to_class = []
-
-        if not os.path.isdir(root_dir):  # noqa: PTH112
-            msg = f"Root directory not found: {root_dir}"
+    def _load_samples(self) -> None:
+        if not self.root_dir.exists():
+            msg = f"Root directory {self.root_dir} does not exist."
             raise FileNotFoundError(msg)
 
-        # 遍历根目录下的每个子目录（代表一个类别）  # noqa: RUF003
-        for target_class_name in sorted(os.listdir(root_dir)):  # noqa: PTH208
-            class_dir_path = os.path.join(root_dir, target_class_name)  # noqa: PTH118
-            if not os.path.isdir(class_dir_path):  # noqa: PTH112
-                continue  # 跳过非目录文件
+        class_to_idx = {}
+        valid_extensions = get_image_extensions()
 
-            # 为类别分配一个索引
-            if target_class_name not in class_to_idx:
-                class_to_idx[target_class_name] = len(class_to_idx)
-                idx_to_class.append(target_class_name)
+        class_dirs = [d for d in self.root_dir.iterdir() if d.is_dir()]
+        class_dirs.sort(key=lambda x: x.name)
 
-            class_idx = class_to_idx[target_class_name]
+        for class_dir in class_dirs:
+            class_name = class_dir.name
+            class_idx = len(class_to_idx)
+            class_to_idx[class_name] = class_idx
+            self.classes.append(class_name)
 
-            # 遍历类别目录下的所有图片文件
-            for img_file_name in sorted(os.listdir(class_dir_path)):  # noqa: PTH208
-                img_path = os.path.join(class_dir_path, img_file_name)  # noqa: PTH118
-                # 检查文件是否是图片（这里只做了简单的扩展名判断，可以更完善）  # noqa: RUF003
-                if os.path.isfile(img_path) and img_file_name.lower().endswith(  # noqa: PTH113
-                    (".png", ".jpg", ".jpeg", ".gif", ".bmp")
-                ):
-                    self.samples.append((img_path, class_idx))
+            # Move image file collection inside the class_dir loop
+            for ext in valid_extensions:
+                for img_path in class_dir.glob(f"*{ext}"):
+                    self.samples.append((str(img_path), class_idx))
 
-        self.classes = idx_to_class
         if not self.samples:
-            msg = f"在目录 '{root_dir}' 中没有找到任何图片。请检查目录结构和文件扩展名。"
-            raise RuntimeError(
-                msg
-            )
+            msg = f"No valid images found in directory '{self.root_dir}'"
+            raise RuntimeError(msg)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -212,15 +212,21 @@ class CustomImageFolderDataSource:
 
 def create_datasets(params):
     """Create training and validation datasets"""
-    train_dataset = CustomImageFolderDataSource(params["train_data_path"])
+    train_dataset = ImageFolderDataSource(params["train_data_path"])
 
-    val_dataset = CustomImageFolderDataSource(params["val_data_path"])
+    val_dataset = ImageFolderDataSource(params["val_data_path"])
 
     return train_dataset, val_dataset
 
 
 def create_dataloaders(train_dataset, val_dataset, params):
     """Create data loaders"""
+
+    def create_batch_fn(batch):
+        images = jnp.stack([element[0] for element in batch], axis=0)
+        labels = jnp.stack([element[1] for element in batch], axis=0)
+        return images, labels
+
     train_loader = (
         grain.MapDataset.source(train_dataset)
         .shuffle(seed=params["seed"])
@@ -234,15 +240,11 @@ def create_dataloaders(train_dataset, val_dataset, params):
         .batch(
             batch_size=params["batch_size"],
             drop_remainder=True,
-            batch_fn=lambda ts: (
-                np.stack([t[0] for t in ts], axis=0),
-                np.stack([t[1] for t in ts], axis=0),
-            ),
+            batch_fn=create_batch_fn,
         )
     )
     val_loader = (
         grain.MapDataset.source(val_dataset)
-        .shuffle(seed=params["seed"])
         .map(LoadImageMap())
         .map(
             AlbumentationsTransform(
@@ -253,10 +255,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         .batch(
             batch_size=params["batch_size"],
             drop_remainder=False,
-            batch_fn=lambda ts: (
-                np.stack([t[0] for t in ts], axis=0),
-                np.stack([t[1] for t in ts], axis=0),
-            ),
+            batch_fn=create_batch_fn,
         )
     )
 
@@ -268,12 +267,24 @@ def create_model(seed, num_classes):
     return resnet50(rngs=nnx.Rngs(seed), num_classes=num_classes)
 
 
-def save_model(model, path):
+def create_optimizer(model, learining_rate: float, weight_decay: float):
+    """Create an optimizer for the model"""
+    return nnx.Optimizer(
+        model,
+        optax.adamw(
+            learning_rate=learining_rate,
+            weight_decay=weight_decay,
+        ),
+    )
+
+
+def save_model(model, path_str: str):
     """Save model state"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)  # noqa: PTH103, PTH120
+    model_path = Path(path_str)
+    model_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     checkpointer = ocp.PyTreeCheckpointer()
     state = nnx.state(model)
-    checkpointer.save(path, state)
+    checkpointer.save(model_path, state)
 
 
 def load_model(path, num_classes):
@@ -344,62 +355,6 @@ def validate_epoch(model, metrics, val_loader, epoch_num):
     return result
 
 
-def update_metrics_history(metrics_history, train_result, val_result):
-    """Update metrics history"""
-    for k, v in train_result.items():
-        metrics_history[f"train_{k}"].append(float(v))
-
-    for k, v in val_result.items():
-        metrics_history[f"val_{k}"].append(float(v))
-
-
-def save_best_model_if_improved(model, val_result, best_acc, epoch_num, checkpoint_dir):
-    """Save model if it's the best so far"""
-    current_acc = float(val_result["accuracy"])
-
-    if current_acc > best_acc:
-        checkpoint_path = os.path.join(  # noqa: PTH118
-            checkpoint_dir,
-            f"best_model_Epoch_{epoch_num + 1}_Acc_{current_acc:.6f}",
-            "state",
-        )
-        save_model(model, checkpoint_path)
-        print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
-        return current_acc
-
-    return best_acc
-
-
-def plot_training_metrics(metrics_history):
-    """Plot training and validation metrics"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-
-    epochs = range(1, len(metrics_history["train_loss"]) + 1)
-
-    # Plot loss
-    ax1.plot(epochs, metrics_history["train_loss"], label="Train Loss", marker="o")
-    ax1.plot(epochs, metrics_history["val_loss"], label="Val Loss", marker="s")
-    ax1.set_title("Training and Validation Loss")
-    ax1.set_xlabel("Epoch")
-    ax1.set_ylabel("Loss")
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)  # noqa: FBT003
-
-    # Plot accuracy
-    ax2.plot(
-        epochs, metrics_history["train_accuracy"], label="Train Accuracy", marker="o"
-    )
-    ax2.plot(epochs, metrics_history["val_accuracy"], label="Val Accuracy", marker="s")
-    ax2.set_title("Training and Validation Accuracy")
-    ax2.set_xlabel("Epoch")
-    ax2.set_ylabel("Accuracy")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)  # noqa: FBT003
-
-    plt.tight_layout()
-    plt.show()
-
-
 def print_dataset_info(train_dataset, val_dataset):
     """Print dataset information"""
     print("📊 Dataset Info:")
@@ -427,29 +382,41 @@ def main():
     print("\n🏗️ Creating model and optimizer...")
     model = create_model(params["seed"], params["num_classes"])
 
-    optimizer = nnx.Optimizer(
+    optimizer = create_optimizer(
         model,
-        optax.adamw(
-            learning_rate=params["learning_rate"],
-            weight_decay=params["weight_decay"],
-        ),
+        learining_rate=params["learning_rate"],
+        weight_decay=params["weight_decay"],
     )
 
-    metrics = nnx.MultiMetric(
+    train_metrics = nnx.MultiMetric(
+        accuracy=nnx.metrics.Accuracy(),
+        loss=nnx.metrics.Average("loss"),
+    )
+    val_metrics = nnx.MultiMetric(
         accuracy=nnx.metrics.Accuracy(),
         loss=nnx.metrics.Average("loss"),
     )
 
     # Initialize tracking variables
+
+    # Initialize best accuracy
+    best_acc = -1.0
+
     metrics_history = {
         "train_loss": [],
         "train_accuracy": [],
         "val_loss": [],
         "val_accuracy": [],
     }
-    best_acc = -1.0
-
     # Training loop
+    csv_path = os.path.join(params["checkpoint_dir"], "train_log.csv")  # noqa: PTH118
+    with Path.open(csv_path, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"]
+        )
+    cached_train_step = nnx.cached_partial(train_step, model, optimizer, train_metrics)
+    cached_eval_step = nnx.cached_partial(eval_step, model, val_metrics)
     print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
 
     for epoch in range(params["num_epochs"]):
@@ -458,23 +425,53 @@ def main():
         print(f"{'=' * 60}")
 
         # Train and validate
-        train_result = train_epoch(model, optimizer, metrics, train_loader, epoch)
-        val_result = validate_epoch(model, metrics, val_loader, epoch)
-
-        # Update metrics history
-        update_metrics_history(metrics_history, train_result, val_result)
-
-        # Save best model
-        best_acc = save_best_model_if_improved(
-            model, val_result, best_acc, epoch, params["checkpoint_dir"]
+        model.train()
+        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
+            cached_train_step(batch)
+        train_result = train_metrics.compute()
+        train_metrics.reset()
+        print(
+            f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%"
         )
 
+        model.eval()
+        for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
+            cached_eval_step(batch)
+        val_result = val_metrics.compute()
+        val_metrics.reset()
+        print(
+            f"📊 Val Loss: {val_result['loss']:.6f}, Acc: {val_result['accuracy'] * 100:.6f}%"
+        )
+
+        for k, v in train_result.items():
+            metrics_history[f"train_{k}"].append(v)
+        for k, v in val_result.items():
+            metrics_history[f"val_{k}"].append(v)
+        # Save model if validation accuracy improved
+
+        current_acc = float(val_result["accuracy"])
+        if current_acc > best_acc:
+            best_acc = current_acc
+            checkpoint_path = os.path.join(  # noqa: PTH118
+                params["checkpoint_dir"],
+                f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}",
+                "state",
+            )
+            save_model(model, checkpoint_path)
+            print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
+        with open(csv_path, mode="a", newline="") as f:  # noqa: PTH123
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    epoch + 1,
+                    train_result["loss"],
+                    train_result["accuracy"],
+                    val_result["loss"],
+                    val_result["accuracy"],
+                ]
+            )
     print("\n🎯 Training completed!")
     print(f"🏆 Best validation accuracy: {best_acc * 100:.6f}%")
-
-    # Plot results
-    print("\n📈 Plotting training metrics...")
-    plot_training_metrics(metrics_history)
 
 
 if __name__ == "__main__":
