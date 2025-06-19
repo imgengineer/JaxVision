@@ -8,8 +8,8 @@ import numpy as np
 from flax import nnx
 from jax import Array
 
-from ops.misc import GELU, Conv2dNormActivation, Identity, SiLU, SqueezeExtraction
-from ops.stochastic_depth import StochasticDepth
+from ..ops.misc import GELU, Conv2dNormActivation, Identity, SiLU, SqueezeExtraction
+from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
     "MaxVit",
@@ -350,7 +350,7 @@ class PartitionAttentionLayer(nnx.Module):
         self.mlp_layer = nnx.Sequential(
             nnx.LayerNorm(in_channels, rngs=rngs),
             nnx.Linear(in_channels, in_channels * mlp_ratio, rngs=rngs),
-            activation_layer,
+            activation_layer(),
             nnx.Linear(in_channels * mlp_ratio, in_channels, rngs=rngs),
             nnx.Dropout(mlp_dropout, rngs=rngs),
         )
@@ -752,7 +752,6 @@ def _maxvit(  # noqa: PLR0913
         rngs=rngs,
         **kwargs,
     )
-
 
 
 def maxvit_t(*, rngs: nnx.Rngs, **kwargs: Any) -> MaxVit:

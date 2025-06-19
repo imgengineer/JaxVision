@@ -3,8 +3,7 @@ from collections.abc import Callable
 from flax import nnx
 from jax import Array
 
-from ops.misc import Conv2dNormActivation, ReLU6
-
+from ..ops.misc import Conv2dNormActivation, ReLU6
 from ._utils import _make_divisible
 
 __all__ = ["MobileNetV2", "mobilenet_v2"]

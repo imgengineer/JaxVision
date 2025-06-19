@@ -6,9 +6,8 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import Conv2dNormActivation, Hardsigmoid, Hardswish, ReLU
-from ops.misc import SqueezeExtraction as SElayer
-
+from ..ops.misc import Conv2dNormActivation, Hardsigmoid, Hardswish, ReLU
+from ..ops.misc import SqueezeExtraction as SElayer
 from ._utils import _make_divisible
 
 __all__ = [

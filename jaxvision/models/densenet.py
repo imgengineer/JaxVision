@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import ReLU
+from ..ops.misc import ReLU
 
 __all__ = [
     "DenseNet",

@@ -1,10 +1,10 @@
-from .alexnet import *  # noqa: N999
+from .alexnet import *
 from .convnext import *
 from .densenet import *
 from .efficientnet import *
 from .googlenet import *
 from .inception import *
-from .mambaout import *
+from .maxvit import *
 from .mnasnet import *
 from .mobilenet import *
 from .regnet import *

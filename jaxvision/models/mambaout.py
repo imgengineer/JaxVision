@@ -3,7 +3,6 @@ from functools import partial
 import jax.numpy as jnp
 from flax import nnx
 from jax import Array
-
 from ops.misc import GELU, DropPath
 
 

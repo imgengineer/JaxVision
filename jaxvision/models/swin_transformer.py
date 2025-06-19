@@ -7,8 +7,8 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import GELU, MLP, ReLU
-from ops.stochastic_depth import StochasticDepth
+from ..ops.misc import GELU, MLP, ReLU
+from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
     "SwinTransformer",

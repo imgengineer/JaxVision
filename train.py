@@ -16,8 +16,8 @@ from flax import nnx
 from tqdm import tqdm
 
 from dataset import ImageFolderDataSource
-from models.resnet import resnet18
-from transforms import AlbumentationsTransform, LoadImageMap
+from jaxvision.models.resnet import resnet18
+from jaxvision.transforms import AlbumentationsTransform, LoadImageMap
 
 # Configuration
 params = {

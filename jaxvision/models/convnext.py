@@ -5,8 +5,8 @@ from typing import Any
 from flax import nnx
 from jax import Array
 
-from ops.misc import GELU, Conv2dNormActivation
-from ops.stochastic_depth import StochasticDepth
+from ..ops.misc import GELU, Conv2dNormActivation
+from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
     "ConvNeXt",
