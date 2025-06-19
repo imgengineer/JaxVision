@@ -214,7 +214,6 @@ def _mobilenet_v3_conf(
     *,
     reduced_tail: bool = False,
     dilated: bool = False,
-    **kwargs: Any,  # noqa: ARG001
 ):
     reduce_divider = 2 if reduced_tail else 1
     dilation = 2 if dilated else 1
@@ -319,10 +318,14 @@ def _mobilenet_v3(
 
 
 def mobilenet_v3_large(*, rngs: nnx.Rngs, **kwargs) -> MobileNetV3:
-    inverted_residual_setting, last_channel = _mobilenet_v3_conf("mobilenet_v3_large", **kwargs)
+    inverted_residual_setting, last_channel = _mobilenet_v3_conf(
+        "mobilenet_v3_large",
+    )
     return _mobilenet_v3(inverted_residual_setting, last_channel, rngs=rngs, **kwargs)
 
 
 def mobilenet_v3_small(*, rngs: nnx.Rngs, **kwargs) -> MobileNetV3:
-    inverted_residual_setting, last_channel = _mobilenet_v3_conf("mobilenet_v3_small", **kwargs)
+    inverted_residual_setting, last_channel = _mobilenet_v3_conf(
+        "mobilenet_v3_small",
+    )
     return _mobilenet_v3(inverted_residual_setting, last_channel, rngs=rngs, **kwargs)

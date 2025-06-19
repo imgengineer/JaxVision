@@ -237,7 +237,6 @@ class BlockParams:
         group_width: int,
         bottleneck_multiplier: float = 1.0,
         se_ratio: float | None = None,
-        **kwargs,
     ) -> "BlockParams":
         """Programmatically compute all the per-block settings,
         given the RegNet parameters.
@@ -445,7 +444,7 @@ def regnet_y_400mf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=16, w_0=48, w_a=27.89, w_m=2.09, group_width=8, se_ratio=0.25, **kwargs)
+    params = BlockParams.from_init_params(depth=16, w_0=48, w_a=27.89, w_m=2.09, group_width=8, se_ratio=0.25)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -471,7 +470,7 @@ def regnet_y_800mf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=14, w_0=56, w_a=38.84, w_m=2.4, group_width=16, se_ratio=0.25, **kwargs)
+    params = BlockParams.from_init_params(depth=14, w_0=56, w_a=38.84, w_m=2.4, group_width=16, se_ratio=0.25)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -504,7 +503,6 @@ def regnet_y_1_6gf(
         w_m=2.65,
         group_width=24,
         se_ratio=0.25,
-        **kwargs,
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
@@ -538,7 +536,6 @@ def regnet_y_3_2gf(
         w_m=2.66,
         group_width=24,
         se_ratio=0.25,
-        **kwargs,
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
@@ -572,7 +569,6 @@ def regnet_y_8gf(
         w_m=2.19,
         group_width=56,
         se_ratio=0.25,
-        **kwargs,
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
@@ -606,7 +602,6 @@ def regnet_y_16gf(
         w_m=2.48,
         group_width=112,
         se_ratio=0.25,
-        **kwargs,
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
@@ -640,7 +635,6 @@ def regnet_y_32gf(
         w_m=2.53,
         group_width=232,
         se_ratio=0.25,
-        **kwargs,
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
@@ -674,7 +668,6 @@ def regnet_y_128gf(
         w_m=2.52,
         group_width=264,
         se_ratio=0.25,
-        **kwargs,
     )
     return _regnet(params, rngs=rngs, **kwargs)
 
@@ -701,7 +694,7 @@ def regnet_x_400mf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=22, w_0=24, w_a=24.48, w_m=2.54, group_width=16, **kwargs)
+    params = BlockParams.from_init_params(depth=22, w_0=24, w_a=24.48, w_m=2.54, group_width=16)
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -727,7 +720,13 @@ def regnet_x_800mf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=16, w_0=56, w_a=35.73, w_m=2.28, group_width=16, **kwargs)
+    params = BlockParams.from_init_params(
+        depth=16,
+        w_0=56,
+        w_a=35.73,
+        w_m=2.28,
+        group_width=16,
+    )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -753,7 +752,13 @@ def regnet_x_1_6gf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=18, w_0=80, w_a=34.01, w_m=2.25, group_width=24, **kwargs)
+    params = BlockParams.from_init_params(
+        depth=18,
+        w_0=80,
+        w_a=34.01,
+        w_m=2.25,
+        group_width=24,
+    )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -779,7 +784,13 @@ def regnet_x_3_2gf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=25, w_0=88, w_a=26.31, w_m=2.25, group_width=48, **kwargs)
+    params = BlockParams.from_init_params(
+        depth=25,
+        w_0=88,
+        w_a=26.31,
+        w_m=2.25,
+        group_width=48,
+    )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -805,7 +816,13 @@ def regnet_x_8gf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=23, w_0=80, w_a=49.56, w_m=2.88, group_width=120, **kwargs)
+    params = BlockParams.from_init_params(
+        depth=23,
+        w_0=80,
+        w_a=49.56,
+        w_m=2.88,
+        group_width=120,
+    )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -831,7 +848,13 @@ def regnet_x_16gf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=22, w_0=216, w_a=55.59, w_m=2.1, group_width=128, **kwargs)
+    params = BlockParams.from_init_params(
+        depth=22,
+        w_0=216,
+        w_a=55.59,
+        w_m=2.1,
+        group_width=128,
+    )
     return _regnet(params, rngs=rngs, **kwargs)
 
 
@@ -857,5 +880,11 @@ def regnet_x_32gf(
         :members:
 
     """
-    params = BlockParams.from_init_params(depth=23, w_0=320, w_a=69.86, w_m=2.0, group_width=168, **kwargs)
+    params = BlockParams.from_init_params(
+        depth=23,
+        w_0=320,
+        w_a=69.86,
+        w_m=2.0,
+        group_width=168,
+    )
     return _regnet(params, rngs=rngs, **kwargs)
