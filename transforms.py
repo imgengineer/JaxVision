@@ -14,8 +14,6 @@ class AlbumentationsTransform(grain.transforms.Map):
 
 
 class LoadImageMap(grain.transforms.Map):
-    """优化的图像加载器，增加错误处理"""  # noqa: RUF002
-
     def map(self, element: tuple[str, int]) -> tuple[np.ndarray, int]:
         img_path, label = element
         img = cv2.imread(img_path, cv2.IMREAD_COLOR_RGB)
