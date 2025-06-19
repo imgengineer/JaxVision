@@ -1,15 +1,17 @@
 import jax
 from flax import nnx
 
-from models.googlenet import googlenet
+from models.vision_transformer import vit_b_16
 
 rngs = nnx.Rngs(0)
 x = jax.random.normal(rngs.params(), (1, 224, 224, 3))
-model = googlenet(
+model = vit_b_16(
     rngs=rngs,
     num_classes=10,
 )
 model.eval()
 
-y= model(x)
-print(y.shape)
+print(model(x).shape)
+# for path, m in model.iter_modules():
+#     if isinstance(m, nnx.Linear):
+#         print(path, m)

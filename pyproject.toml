@@ -3,91 +3,41 @@ name = "jaxvision"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "albumentations>=2.0.8",
     "datasets>=3.6.0",
     "flax[all]>=0.10.6",
+    "grain>=0.2.10",
     "jax>=0.6.1",
     "opencv-python>=4.11.0.86",
-    "optax>=0.2.4",
+    "optax>=0.2.5",
     "orbax>=0.1.9",
     "polars>=1.30.0",
     "ruff>=0.11.11",
-    "timm>=1.0.15",
-    "torchvision>=0.22.0",
+    "torchvision>=0.22.1",
     "tqdm>=4.67.1",
 ]
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cpu" },
-]
-torchvision = [
-  { index = "pytorch-cpu" },
-]
-
 [tool.ruff]
-line-length=120
-target-version="py312"
-
+target-version = "py312"
+line-length = 120
+fix = true
+cache-dir = ".ruff_cache"
 [tool.ruff.lint]
-select=[
-  "ALL"
-]
+select = ["ALL"]
 ignore = [
-    #### 模块
-    "ANN", # flake8-annotations
-    "COM", # flake8-commas
-    "C90", # mccabe 复杂度
-    "DJ",  # django
-    "EXE", # flake8-executable
-    "T10", # 调试器
-    "TID", # flake8-tidy-imports
-
-    #### 特定规则
-    "D100",   # 忽略缺失的文档
+    "ANN",
+    "D103",
     "D101",
     "D102",
-    "D103",
-    "D104",
-    "D105",
-    "D106",
     "D107",
-    "D200",
+    "D100",
+    "C901",
+    "D417",
     "D205",
-    "D212",
-    "D400",
     "D401",
-    "D415",
-    "E402",   # 本地导入的误报
-    "E501",   # 行太长
-    "TRY003", # 异常中的外部消息太冗长
-    "TD002",
-    "TD003",
-    "FIX002", # todo 的描述太冗长
-    "T201", # Print语句
+    "ERA001",
+    "FBT003",
+    "T201",
 ]
-fixable=['ALL']
-
-# 允许以下划线为前缀的未使用变量。
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
-[tool.ruff.format]
-
-# 像 Black 一样，字符串使用双引号。
-quote-style = "double"
-
-# 像 Black 一样，用空格缩进，而不是制表符。
-indent-style = "space"
-
-# 像 Black 一样，保留魔术尾随逗号。
-skip-magic-trailing-comma = false
-
-# 像 Black 一样，自动检测合适的行尾。
-line-ending = "auto"

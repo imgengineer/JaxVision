@@ -14,3 +14,9 @@ MpoxData/
 
 # Vscode Config
 .vscode/
+
+# Ruff cache
+.ruff_cache/
+
+# Checkpoints
+.checkpoints/
