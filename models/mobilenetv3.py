@@ -2,6 +2,7 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
+import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
@@ -25,7 +26,7 @@ class InvertedResidualConfig:
         kernel: int,
         expanded_channels: int,
         out_channels: int,
-        use_se: bool,
+        use_se: bool,  # noqa: FBT001
         activation: str,
         stride: int,
         dilation: int,
@@ -75,7 +76,7 @@ class InvertResidual(nnx.Module):
                     norm_layer=norm_layer,
                     activation_layer=activation_layer,
                     rngs=rngs,
-                )
+                ),
             )
         # depthwise
         stride = 1 if cnf.dilation > 1 else cnf.stride
@@ -90,7 +91,7 @@ class InvertResidual(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=activation_layer,
                 rngs=rngs,
-            )
+            ),
         )
         if cnf.use_se:
             squeeze_channels = _make_divisible(cnf.expanded_channels // 4, 8)
@@ -105,17 +106,17 @@ class InvertResidual(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=None,
                 rngs=rngs,
-            )
+            ),
         )
 
         self.block = nnx.Sequential(*layers)
         self.out_channels = cnf.out_channels
         self._is_cn = cnf.stride > 1
 
-    def __call__(self, inputs: Array) -> Array:
-        result = self.block(inputs)
+    def __call__(self, input: Array) -> Array:  # noqa: A002
+        result = self.block(input)
         if self.use_res_connect:
-            result += inputs
+            result += input
         return result
 
 
@@ -131,8 +132,7 @@ class MobileNetV3(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        """
-        MobileNet V3 main class
+        """MobileNet V3 main class.
 
         Args:
             inverted_residual_setting (List[InvertedResidualConfig]): Network structure
@@ -174,12 +174,11 @@ class MobileNetV3(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=nnx.hard_swish,
                 rngs=rngs,
-            )
+            ),
         )
 
         # building inverted residual blocks
-        for cnf in inverted_residual_setting:
-            layers.append(block(cnf, norm_layer, rngs=rngs))
+        layers.extend([block(cnf, norm_layer, rngs=rngs) for cnf in inverted_residual_setting])
 
         # building last several layers
         lastconv_input_channels = inverted_residual_setting[-1].out_channels
@@ -192,7 +191,7 @@ class MobileNetV3(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=nnx.hard_swish,
                 rngs=rngs,
-            )
+            ),
         )
 
         self.features = nnx.Sequential(*layers)
@@ -203,30 +202,19 @@ class MobileNetV3(nnx.Module):
             nnx.Linear(last_channel, num_classes, rngs=rngs),
         )
 
-        for _, m in self.iter_modules():
-            if isinstance(m, nnx.Conv):
-                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
-                if m.bias is not None:
-                    m.bias_init = nnx.initializers.zeros_init()
-            elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
-                m.scale_init = nnx.initializers.ones_init()
-                m.bias_init = nnx.initializers.zeros_init()
-            elif isinstance(m, nnx.Linear):
-                m.kernel_init = nnx.initializers.normal(stddev=0.01)
-                m.bias_init = nnx.initializers.zeros_init()
-
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
-        x = x.mean(axis=(1, 2))
+        x = jnp.mean(x, axis=(1, 2))
         return self.classifier(x)
 
 
 def _mobilenet_v3_conf(
     arch: str,
     width_mult: float = 1.0,
+    *,
     reduced_tail: bool = False,
     dilated: bool = False,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ):
     reduce_divider = 2 if reduced_tail else 1
     dilation = 2 if dilated else 1

@@ -43,8 +43,7 @@ def _get_relative_position_index(height: int, width: int) -> Array:
     relative_coords = relative_coords.transpose(1, 2, 0)
     relative_coords_h = relative_coords[:, :, 0] + (height - 1)
     relative_coords_w = relative_coords[:, :, 1] + (width - 1)
-    relative_position_index = relative_coords_h * (2 * width - 1) + relative_coords_w
-    return relative_position_index
+    return relative_coords_h * (2 * width - 1) + relative_coords_w
 
 
 class MBConv(nnx.Module):
@@ -59,6 +58,7 @@ class MBConv(nnx.Module):
         activation_layer (Callable[..., nn.Module]): Activation function.
         norm_layer (Callable[..., nn.Module]): Normalization function.
         p_stochastic_dropout (float): Probability of stochastic depth.
+
     """
 
     def __init__(  # noqa: PLR0913
@@ -128,16 +128,17 @@ class MBConv(nnx.Module):
                     use_bias=True,
                     rngs=rngs,
                 ),
-            ]
+            ],
         )
         self.layers = nnx.Sequential(*_layers)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
-            x (Array): Input tensor with expected layout of [B, H, W, C]
+        """Args:
+            x (Array): Input tensor with expected layout of [B, H, W, C].
+
         Returns:
             Array: Output tensor with expected layout of [B, H / stride, W / stride, C].
+
         """
         res = self.proj(x)
         x = self.stochastic_depath(self.layers(x))
@@ -151,6 +152,7 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         feat_dim (int): Number of input features.
         head_dim (int): Number of features per head.
         max_seq_len (int): Maximum sequence length.
+
     """
 
     def __init__(
@@ -164,7 +166,8 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         super().__init__()
 
         if feat_dim % head_dim != 0:
-            raise ValueError(f"feat_dim: {feat_dim} must be divisible by head_dim: {head_dim}")
+            msg = f"feat_dim: {feat_dim} must be divisible by head_dim: {head_dim}"
+            raise ValueError(msg)
 
         self.n_heads = feat_dim // head_dim
         self.head_dim = head_dim
@@ -176,7 +179,7 @@ class RelativePositionMultiHeadAttention(nnx.Module):
 
         self.merge = nnx.Linear(self.head_dim * self.n_heads, feat_dim, rngs=rngs)
         self.relative_position_bias_table = nnx.Param(
-            nnx.initializers.zeros(rngs.params(), shape=((2 * self.size - 1) * (2 * self.size - 1), self.n_heads))
+            nnx.initializers.zeros(rngs.params(), shape=((2 * self.size - 1) * (2 * self.size - 1), self.n_heads)),
         )
 
         self.relative_position_index = _get_relative_position_index(self.size, self.size)
@@ -188,11 +191,12 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         return jnp.expand_dims(relative_bias, axis=0)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
+        """Args:
             x (Array): Input tensor with expected layout of [B, G, P, D].
+
         Returns:
             Array: Output tensor with expected layout of [B, G, P, D].
+
         """
         B, G, P, D = x.shape  # noqa: N806
         H, DH = self.n_heads, self.head_dim  # noqa: N806
@@ -213,8 +217,7 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         out = jnp.einsum("B G H I J, B G H J D -> B G H I D", dot_prod, v)
         out = out.transpose(0, 1, 3, 2, 4).reshape(B, G, P, D)
 
-        out = self.merge(out)
-        return out
+        return self.merge(out)
 
 
 class SwapAxes(nnx.Module):
@@ -230,47 +233,44 @@ class SwapAxes(nnx.Module):
 
 
 class WindowPartition(nnx.Module):
-    """
-    Partition the input tensor into non-overlapping windows.
-    """
+    """Partition the input tensor into non-overlapping windows."""
 
     def __init__(self) -> None:
         super().__init__()
 
     def __call__(self, x: Array, p: int) -> Array:
-        """
-        Args:
+        """Args:
             x (Array): Input tensor with expected layout of [B, H, W, C].
             p (int): Number of partitions.
+
         Returns:
             : Output tensor with expected layout of [B, H/P, W/P, P*P, C].
+
         """
         B, H, W, C = x.shape  # noqa: N806
         P = p  # noqa: N806
         # chunk up H and W dimension
         x = x.reshape(B, H // P, P, W // P, P, C)
         x = x.transpose(0, 1, 3, 2, 4, 5)
-        x = x.reshape(B, (H // P) * (W // P), P * P, C)
-        return x
+        return x.reshape(B, (H // P) * (W // P), P * P, C)
 
 
 class WindowDepartition(nnx.Module):
-    """
-    Departition the input tensor of non-overlapping windows into a feature volume of layout [B, C, H, W].
-    """
+    """Departition the input tensor of non-overlapping windows into a feature volume of layout [B, C, H, W]."""
 
     def __init__(self) -> None:
         super().__init__()
 
     def __call__(self, x: Array, p: int, h_partitions: int, w_partitions: int) -> Array:
-        """
-        Args:
+        """Args:
             x (Array): Input tensor with expected layout of [B, (H/P * W/P), P*P, C].
             p (int): Number of partitions.
             h_partitions (int): Number of vertical partitions.
             w_partitions (int): Number of horizontal partitions.
+
         Returns:
             Array: Output tensor with expected layout of [B, H, W, C].
+
         """
         B, G, PP, C = x.shape  # noqa: N806
         P = p  # noqa: N806
@@ -280,13 +280,11 @@ class WindowDepartition(nnx.Module):
         # B, HP, P, WP, P, C
         x = x.transpose(0, 1, 3, 2, 4, 5)
         # reshape into B, H, W, C
-        x = x.reshape(B, HP * P, WP * P, C)
-        return x
+        return x.reshape(B, HP * P, WP * P, C)
 
 
 class PartitionAttentionLayer(nnx.Module):
-    """
-    Layer for partitioning the input tensor into non-overlapping windows and applying attention to each window.
+    """Layer for partitioning the input tensor into non-overlapping windows and applying attention to each window.
 
     Args:
         in_channels (int): Number of input channels.
@@ -300,6 +298,7 @@ class PartitionAttentionLayer(nnx.Module):
         attention_dropout (float): Dropout probability for the attention layer.
         mlp_dropout (float): Dropout probability for the MLP layer.
         p_stochastic_dropout (float): Probability of dropping out a partition.
+
     """
 
     def __init__(  # noqa: PLR0913
@@ -330,7 +329,8 @@ class PartitionAttentionLayer(nnx.Module):
         self.grid_size = grid_size
 
         if partition_type not in ["grid", "window"]:
-            raise ValueError("partition_type must be either 'grid' or 'window'")
+            msg = "partition_type must be either 'grid' or 'window'"
+            raise ValueError(msg)
 
         if partition_type == "window":
             self.p, self.g = partition_size, self.n_partitions
@@ -358,11 +358,12 @@ class PartitionAttentionLayer(nnx.Module):
         self.stochastic_dropout = StochasticDepth(p_stochastic_dropout, mode="row", rngs=rngs)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
+        """Args:
             x (Array): Input tensor with expected layout of [B, H, W, C].
+
         Returns:
             Array: Output tensor with expected layout of [B, H, W, C].
+
         """
         gh, gw = self.grid_size[0] // self.p, self.grid_size[1] // self.p
         x = self.partition_op(x, self.p)
@@ -370,13 +371,11 @@ class PartitionAttentionLayer(nnx.Module):
         x = x + self.stochastic_dropout(self.attn_layer(x))
         x = x + self.stochastic_dropout(self.mlp_layer(x))
         x = self.departition_swap(x)
-        x = self.departition_op(x, self.p, gh, gw)
-        return x
+        return self.departition_op(x, self.p, gh, gw)
 
 
 class MaxVitLayer(nnx.Module):
-    """
-    MaxVit layer consisting of a MBConv layer followed by a PartitionAttentionLayer with `window` and a PartitionAttentionLayer with `grid`.
+    """MaxVit layer consisting of a MBConv layer followed by a PartitionAttentionLayer with `window` and a PartitionAttentionLayer with `grid`.
 
     Args:
         in_channels (int): Number of input channels.
@@ -393,6 +392,7 @@ class MaxVitLayer(nnx.Module):
         p_stochastic_dropout (float): Probability of stochastic depth.
         partition_size (int): Size of the partitions.
         grid_size (tuple[int, int]): Size of the input feature grid.
+
     """  # noqa: E501
 
     def __init__(  # noqa: PLR0913
@@ -461,26 +461,25 @@ class MaxVitLayer(nnx.Module):
                     p_stochastic_dropout=p_stochastic_dropout,
                     rngs=rngs,
                 ),
-            ]
+            ],
         )
         self.layers = nnx.Sequential(*layers)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
+        """Args:
             x (Array): Input tensor of shape (B, H, W, C).
+
         Returns:
             Array: Output tensor of shape (B, H, W, C).
+
         """
-        x = self.layers(x)
-        return x
+        return self.layers(x)
 
 
 class MaxVitBlock(nnx.Module):
-    """
-    A MaxVit block consisting of `n_layers` MaxVit layers.
+    """A MaxVit block consisting of `n_layers` MaxVit layers.
 
-     Args:
+    Args:
         in_channels (int): Number of input channels.
         out_channels (int): Number of output channels.
         expansion_ratio (float): Expansion ratio in the bottleneck.
@@ -496,6 +495,7 @@ class MaxVitBlock(nnx.Module):
         input_grid_size (tuple[int, int]): Size of the input feature grid.
         n_layers (int): Number of layers in the block.
         p_stochastic (list[float]): list of probabilities for stochastic depth for each layer.
+
     """
 
     def __init__(  # noqa: PLR0913
@@ -523,8 +523,9 @@ class MaxVitBlock(nnx.Module):
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
-        if not len(p_stochastic) == n_layers:
-            raise ValueError(f"p_stochastic must have length n_layers={n_layers}, got p_stochastic={p_stochastic}.")
+        if len(p_stochastic) != n_layers:
+            msg = f"p_stochastic must have length n_layers={n_layers}, got p_stochastic={p_stochastic}."
+            raise ValueError(msg)
 
         self.grid_size = _get_conv_output_shape(input_grid_size, kernel_size=3, stride=2, padding=1)
 
@@ -548,7 +549,7 @@ class MaxVitBlock(nnx.Module):
                     grid_size=self.grid_size,
                     p_stochastic_dropout=p,
                     rngs=rngs,
-                )
+                ),
             )
         self.layers = layers
 
@@ -559,8 +560,8 @@ class MaxVitBlock(nnx.Module):
 
 
 class MaxVit(nnx.Module):
-    """
-    Implements MaxVit Transformer from the `MaxViT: Multi-Axis Vision Transformer <https://arxiv.org/abs/2204.01697>`_ paper.
+    """Implements MaxVit Transformer from the `MaxViT: Multi-Axis Vision Transformer <https://arxiv.org/abs/2204.01697>`_ paper.
+
     Args:
         input_size (tuple[int, int]): Size of the input image.
         stem_channels (int): Number of channels in the stem.
@@ -577,6 +578,7 @@ class MaxVit(nnx.Module):
         mlp_dropout (float): Dropout probability for the MLP layer. Default: 0.0.
         attention_dropout (float): Dropout probability for the attention layer. Default: 0.0.
         num_classes (int): Number of classes. Default: 1000.
+
     """  # noqa: E501
 
     def __init__(  # noqa: PLR0913
@@ -619,10 +621,13 @@ class MaxVit(nnx.Module):
         block_input_sizes = _make_block_input_shapes(input_size, len(block_channels))
         for idx, block_input_size in enumerate(block_input_sizes):
             if block_input_size[0] % partition_size != 0 or block_input_size[1] % partition_size != 0:
-                raise ValueError(
+                msg = (
                     f"Input size {block_input_size} of block {idx} is not divisible by partition size {partition_size}. "  # noqa: E501
                     f"Consider changing the partition size or the input size.\n"
                     f"Current configuration yields the following block input sizes: {block_input_sizes}."
+                )
+                raise ValueError(
+                    msg,
                 )
                 # stem
         self.stem = nnx.Sequential(
@@ -700,8 +705,7 @@ class MaxVit(nnx.Module):
         for block in self.blocks:
             x = block(x)
         x = x.mean(axis=(1, 2))
-        x = self.classifier(x)
-        return x
+        return self.classifier(x)
 
     def _init_weights(self):
         for _, m in self.iter_modules():
@@ -737,7 +741,7 @@ def _maxvit(  # noqa: PLR0913
 ) -> MaxVit:
     input_size = kwargs.pop("input_size", (224, 224))
 
-    model = MaxVit(
+    return MaxVit(
         stem_channels=stem_channels,
         block_channels=block_channels,
         block_layers=block_layers,
@@ -749,12 +753,10 @@ def _maxvit(  # noqa: PLR0913
         **kwargs,
     )
 
-    return model
 
 
 def maxvit_t(*, rngs: nnx.Rngs, **kwargs: Any) -> MaxVit:
-    """
-    Constructs a maxvit_t architecture from
+    """Constructs a maxvit_t architecture from
     `MaxViT: Multi-Axis Vision Transformer <https://arxiv.org/abs/2204.01697>`_.
 
     Args:
@@ -772,8 +774,8 @@ def maxvit_t(*, rngs: nnx.Rngs, **kwargs: Any) -> MaxVit:
 
     .. autoclass:: torchvision.models.MaxVit_T_Weights
         :members:
-    """
 
+    """
     return _maxvit(
         stem_channels=64,
         block_channels=[64, 128, 256, 512],

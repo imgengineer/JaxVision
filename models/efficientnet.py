@@ -111,8 +111,8 @@ class MBConv(nnx.Module):
         stochastic_depth_prob: float,
         norm_layer: Callable[..., nnx.Module],
         se_layer: Callable[..., nnx.Module] = SqueezeExtraction,
-        deterministic: bool = False,
         *,
+        deterministic: bool = False,
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
@@ -137,7 +137,7 @@ class MBConv(nnx.Module):
                     norm_layer=norm_layer,
                     activation_layer=activation_layer,
                     rngs=rngs,
-                )
+                ),
             )
 
         # depthwise
@@ -150,7 +150,7 @@ class MBConv(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=activation_layer,
                 rngs=rngs,
-            )
+            ),
         )
 
         # squeeze and excitation
@@ -161,7 +161,7 @@ class MBConv(nnx.Module):
                 squeeze_channels,
                 activation=nnx.silu,
                 rngs=rngs,
-            )
+            ),
         )
 
         # project
@@ -173,7 +173,7 @@ class MBConv(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=None,
                 rngs=rngs,
-            )
+            ),
         )
 
         self.deterministic = deterministic
@@ -222,7 +222,7 @@ class FusedMBConv(nnx.Module):
                     norm_layer=norm_layer,
                     activation_layer=activation_layer,
                     rngs=rngs,
-                )
+                ),
             )
 
             # project
@@ -234,7 +234,7 @@ class FusedMBConv(nnx.Module):
                     norm_layer=norm_layer,
                     activation_layer=None,
                     rngs=rngs,
-                )
+                ),
             )
         else:
             layers.append(
@@ -246,7 +246,7 @@ class FusedMBConv(nnx.Module):
                     norm_layer=norm_layer,
                     activation_layer=activation_layer,
                     rngs=rngs,
-                )
+                ),
             )
         self.deterministic = deterministic
         self.block = nnx.Sequential(*layers)
@@ -273,8 +273,7 @@ class EfficientNet(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        """
-        EfficientNet V1 and V2 main class
+        """EfficientNet V1 and V2 main class.
 
         Args:
             inverted_residual_setting (Sequence[Union[MBConvConfig, FusedMBConvConfig]]): Network structure
@@ -312,7 +311,7 @@ class EfficientNet(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=nnx.silu,
                 rngs=rngs,
-            )
+            ),
         )
 
         # bulding inverted residual blocks
@@ -348,7 +347,7 @@ class EfficientNet(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=nnx.silu,
                 rngs=rngs,
-            )
+            ),
         )
 
         self.features = nnx.Sequential(*layers)
@@ -473,8 +472,7 @@ def efficientnet_b1(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    EfficientNet B1 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B1 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -504,8 +502,7 @@ def efficientnet_b1(
 
 
 def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:
-    """
-    EfficientNet B2 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B2 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -539,8 +536,7 @@ def efficientnet_b3(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    EfficientNet B3 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B3 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -574,8 +570,7 @@ def efficientnet_b4(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    EfficientNet B4 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B4 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -609,8 +604,7 @@ def efficientnet_b5(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    EfficientNet B5 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B5 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -645,8 +639,7 @@ def efficientnet_b6(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    EfficientNet B6 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B6 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -681,8 +674,7 @@ def efficientnet_b7(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    EfficientNet B7 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
+    """EfficientNet B7 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
 
     Args:
@@ -717,8 +709,7 @@ def efficientnet_v2_s(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    Constructs an EfficientNetV2-S architecture from
+    """Constructs an EfficientNetV2-S architecture from
     `EfficientNetV2: Smaller Models and Faster Training <https://arxiv.org/abs/2104.00298>`_.
 
     Args:
@@ -753,8 +744,7 @@ def efficientnet_v2_m(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    Constructs an EfficientNetV2-M architecture from
+    """Constructs an EfficientNetV2-M architecture from
     `EfficientNetV2: Smaller Models and Faster Training <https://arxiv.org/abs/2104.00298>`_.
 
     Args:
@@ -789,8 +779,7 @@ def efficientnet_v2_l(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> EfficientNet:
-    """
-    Constructs an EfficientNetV2-L architecture from
+    """Constructs an EfficientNetV2-L architecture from
     `EfficientNetV2: Smaller Models and Faster Training <https://arxiv.org/abs/2104.00298>`_.
 
     Args:

@@ -29,7 +29,7 @@ def conv3x3(  # noqa: PLR0913
     *,
     rngs: nnx.Rngs,
 ) -> nnx.Conv:
-    """3x3 convolution with padding"""
+    """3x3 convolution with padding."""
     return nnx.Conv(
         in_planes,
         out_planes,
@@ -44,7 +44,7 @@ def conv3x3(  # noqa: PLR0913
 
 
 def conv1x1(in_planes: int, out_planes: int, stride: int = 1, *, rngs: nnx.Rngs) -> nnx.Conv:
-    """1x1 convolution"""
+    """1x1 convolution."""
     return nnx.Conv(
         in_planes,
         out_planes,
@@ -168,12 +168,12 @@ class ResNet(nnx.Module):
         block: type[BasicBlock | Bottleneck],
         layers: list[int],
         num_classes: int = 1000,
-        zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
         replace_stride_with_dilation: list[bool] | None = None,
         norm_layer: Callable[..., nnx.Module] | None = None,
         *,
+        zero_init_residual: bool = False,
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
@@ -254,8 +254,8 @@ class ResNet(nnx.Module):
         planes: int,
         blocks: int,
         stride: int = 1,
-        dilate: bool = False,
         *,
+        dilate: bool = False,
         rngs: nnx.Rngs,
     ) -> nnx.Sequential:
         norm_layer = self._norm_layer
@@ -282,11 +282,11 @@ class ResNet(nnx.Module):
                 previous_dilation,
                 norm_layer,
                 rngs=rngs,
-            )
+            ),
         )
         self.inplanes = planes * block.expansion
-        for _ in range(1, blocks):
-            layers.append(
+        layers.extend(
+            [
                 block(
                     self.inplanes,
                     planes,
@@ -296,7 +296,9 @@ class ResNet(nnx.Module):
                     norm_layer=norm_layer,
                     rngs=rngs,
                 )
-            )
+                for _ in range(1, blocks)
+            ],
+        )
         return nnx.Sequential(*layers)
 
     def __call__(self, x: Array) -> Array:
@@ -349,8 +351,7 @@ def resnext50_32x4d(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """
-    ResNeXt-50 32x4d model from
+    """ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -377,8 +378,7 @@ def resnext101_32x8d(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """
-    ResNeXt-50 32x4d model from
+    """ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -405,8 +405,7 @@ def resnext101_64x4d(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """
-    ResNeXt-50 32x4d model from
+    """ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -433,8 +432,7 @@ def wide_resnet50_2(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """
-    ResNeXt-50 32x4d model from
+    """ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:
@@ -461,8 +459,7 @@ def wide_resnet101_2(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ResNet:
-    """
-    ResNeXt-50 32x4d model from
+    """ResNeXt-50 32x4d model from
     `Aggregated Residual Transformation for Deep Neural Networks <https://arxiv.org/abs/1611.05431>`_.
 
     Args:

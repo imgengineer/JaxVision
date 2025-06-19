@@ -2,8 +2,6 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
-import jax
-import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
@@ -82,14 +80,15 @@ class ConvNeXt(nnx.Module):
         norm_layer: Callable[..., nnx.Module] | None = None,
         *,
         rngs: nnx.Rngs,
-        **kwargs: Any,
     ) -> None:
         super().__init__()
 
         if not block_setting:
-            raise ValueError("The block_setting should not be empty")
-        elif not (isinstance(block_setting, Sequence) and all(isinstance(s, CNBlockConfig) for s in block_setting)):
-            raise TypeError("The block_setting should be List[CNBlockConfig]")
+            msg = "The block_setting should not be empty"
+            raise ValueError(msg)
+        if not (isinstance(block_setting, Sequence) and all(isinstance(s, CNBlockConfig) for s in block_setting)):
+            msg = "The block_setting should be List[CNBlockConfig]"
+            raise TypeError(msg)
 
         if block is None:
             block = CNBlock
@@ -112,7 +111,7 @@ class ConvNeXt(nnx.Module):
                 activation_layer=None,
                 bias=True,
                 rngs=rngs,
-            )
+            ),
         )
 
         total_stage_blocks = sum(cnf.num_layers for cnf in block_setting)
@@ -132,7 +131,7 @@ class ConvNeXt(nnx.Module):
                     nnx.Sequential(
                         norm_layer(cnf.input_channels, rngs=rngs),
                         nnx.Conv(cnf.input_channels, cnf.out_channels, kernel_size=(2, 2), strides=(2, 2), rngs=rngs),
-                    )
+                    ),
                 )
 
         self.features = nnx.Sequential(*layers)
@@ -155,8 +154,7 @@ class ConvNeXt(nnx.Module):
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = x.mean(axis=(1, 2))
-        x = self.classifier(x)
-        return x
+        return self.classifier(x)
 
 
 def _convnext(
@@ -166,9 +164,7 @@ def _convnext(
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> ConvNeXt:
-    model = ConvNeXt(block_setting, stochastic_depth_prob=stochastic_depth_prob, rngs=rngs, **kwargs)
-
-    return model
+    return ConvNeXt(block_setting, stochastic_depth_prob=stochastic_depth_prob, rngs=rngs, **kwargs)
 
 
 def convnext_tiny(*, rngs: nnx.Rngs, **kwargs: Any) -> ConvNeXt:
@@ -187,6 +183,7 @@ def convnext_tiny(*, rngs: nnx.Rngs, **kwargs: Any) -> ConvNeXt:
 
     .. autoclass:: torchvision.models.ConvNeXt_Tiny_Weights
         :members:
+
     """
     block_setting = [
         CNBlockConfig(96, 192, 3),
@@ -214,8 +211,8 @@ def convnext_small(*, rngs: nnx.Rngs, **kwargs: Any) -> ConvNeXt:
 
     .. autoclass:: torchvision.models.ConvNeXt_Small_Weights
         :members:
-    """
 
+    """
     block_setting = [
         CNBlockConfig(96, 192, 3),
         CNBlockConfig(192, 384, 3),
@@ -242,8 +239,8 @@ def convnext_base(*, rngs: nnx.Rngs, **kwargs: Any) -> ConvNeXt:
 
     .. autoclass:: torchvision.models.ConvNeXt_Base_Weights
         :members:
-    """
 
+    """
     block_setting = [
         CNBlockConfig(128, 256, 3),
         CNBlockConfig(256, 512, 3),
@@ -270,6 +267,7 @@ def convnext_large(*, rngs: nnx.Rngs, **kwargs: Any) -> ConvNeXt:
 
     .. autoclass:: torchvision.models.ConvNeXt_Large_Weights
         :members:
+
     """
     block_setting = [
         CNBlockConfig(192, 384, 3),

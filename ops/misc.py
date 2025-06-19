@@ -21,9 +21,9 @@ class Conv2dNormActivation(nnx.Sequential):
         norm_layer: Callable[..., nnx.Module] | None = nnx.BatchNorm,
         activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
         dilation: int | tuple[int, ...] = 1,
-        bias: bool | None = None,
         conv_layer: Callable[..., nnx.Module] = nnx.Conv,
         *,
+        bias: bool | None = None,
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
@@ -43,7 +43,7 @@ class Conv2dNormActivation(nnx.Sequential):
                 feature_group_count=groups,
                 use_bias=bias,
                 rngs=rngs,
-            )
+            ),
         ]
 
         if norm_layer is not None:
@@ -79,9 +79,9 @@ class SqueezeExtraction(nnx.Module):
         scale = self.fc2(scale)
         return self.scale_activation(scale)
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        scale = self._scale(input)
-        return scale * input
+    def __call__(self, inputs: Array) -> Array:
+        scale = self._scale(inputs)
+        return scale * inputs
 
 
 class MLP(nnx.Sequential):
@@ -91,9 +91,9 @@ class MLP(nnx.Sequential):
         hidden_channels: list[int],
         norm_layer: Callable[..., nnx.Module] | None = None,
         activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
-        bias: bool = False,
         dropout: float = 0.0,
         *,
+        bias: bool = False,
         rngs: nnx.Rngs,
     ):
         layers = []

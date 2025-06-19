@@ -8,9 +8,8 @@ from ops.misc import DropPath
 
 
 class StemLayer(nnx.Module):
-    """
-    Stem layer for initial feature extraction.
-    Code adapted from InternImage: https://github.com/OpenGVLab/InternImage
+    """Stem layer for initial feature extraction.
+    Code adapted from InternImage: https://github.com/OpenGVLab/InternImage.
     """
 
     def __init__(
@@ -26,7 +25,7 @@ class StemLayer(nnx.Module):
         # JAX Conv expects input format (N, H, W, C)
         # Convolution 1: Halves spatial dimensions, halves channels (out_channels // 2)
         self.conv1 = nnx.Conv(
-            in_channels, out_channels // 2, kernel_size=(3, 3), strides=(2, 2), padding="SAME", rngs=rngs
+            in_channels, out_channels // 2, kernel_size=(3, 3), strides=(2, 2), padding="SAME", rngs=rngs,
         )
         self.norm1 = norm_layer(out_channels // 2, rngs=rngs)  # Normalize along the last dimension (channels)
         self.act = act_layer  # Activation function (e.g., GELU)
@@ -43,8 +42,7 @@ class StemLayer(nnx.Module):
         self.norm2 = norm_layer(out_channels, rngs=rngs)  # Normalize along the last dimension (channels)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Performs the forward pass of the StemLayer.
+        """Performs the forward pass of the StemLayer.
 
         Args:
             x: Input feature map (N, H, W, C).
@@ -62,9 +60,8 @@ class StemLayer(nnx.Module):
 
 
 class DownsampleLayer(nnx.Module):
-    """
-    Downsampling layer for feature map reduction.
-    Code adapted from InternImage: https://github.com/OpenGVLab/InternImage
+    """Downsampling layer for feature map reduction.
+    Code adapted from InternImage: https://github.com/OpenGVLab/InternImage.
     """
 
     def __init__(
@@ -89,8 +86,7 @@ class DownsampleLayer(nnx.Module):
         self.norm = norm_layer(out_channels, rngs=rngs)  # Normalize along the last dimension (channels)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Performs the forward pass of the DownsampleLayer.
+        """Performs the forward pass of the DownsampleLayer.
 
         Args:
             x: Input feature map (N, H, W, C).
@@ -105,9 +101,7 @@ class DownsampleLayer(nnx.Module):
 
 
 class MlpHead(nnx.Module):
-    """
-    MLP classification head.
-    """
+    """MLP classification head."""
 
     def __init__(  # noqa: PLR0913
         self,
@@ -117,8 +111,8 @@ class MlpHead(nnx.Module):
         mlp_ratio: int = 4,
         norm_layer=partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
         head_dropout: float = 0.0,
-        bias: bool = True,
         *,
+        bias: bool = True,
         rngs: nnx.Rngs,
     ):
         super().__init__()
@@ -135,8 +129,7 @@ class MlpHead(nnx.Module):
         self.head_dropout = nnx.Dropout(rate=head_dropout, rngs=rngs)  # Dropout layer
 
     def __call__(self, x: Array) -> Array:
-        """
-        Performs the forward pass of the MlpHead.
+        """Performs the forward pass of the MlpHead.
 
         Args:
             x: Input features.
@@ -153,8 +146,7 @@ class MlpHead(nnx.Module):
 
 
 class GatedCNNBlock(nnx.Module):
-    """
-    Implementation of Gated CNN Block.
+    """Implementation of Gated CNN Block.
 
     Args:
         conv_ratio: controls the number of channels to conduct depthwise convolution.
@@ -229,8 +221,7 @@ class GatedCNNBlock(nnx.Module):
             self.drop_path = None
 
     def __call__(self, x: Array) -> Array:
-        """
-        Performs the forward pass of the GatedCNNBlock.
+        """Performs the forward pass of the GatedCNNBlock.
 
         Args:
             x: Input features (N, H, W, C).
@@ -269,9 +260,8 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES = [StemLayer] + [DownsampleLayer] * 3
 
 
 class MambaOut(nnx.Module):
-    """
-    MetaFormer - MambaOut
-    A Flax NNX implementation of: `MetaFormer Baselines for Vision` - https://arxiv.org/abs/2210.13452
+    """MetaFormer - MambaOut
+    A Flax NNX implementation of: `MetaFormer Baselines for Vision` - https://arxiv.org/abs/2210.13452.
 
     Args:
         in_chans (int): Number of input image channels. Default: 3.
@@ -372,8 +362,7 @@ class MambaOut(nnx.Module):
                     m.bias_init = nnx.initializers.constant(0)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Performs the full forward pass of the MambaOut model.
+        """Performs the full forward pass of the MambaOut model.
 
         Args:
             x: Input image (N, H, W, C).
@@ -395,8 +384,7 @@ class MambaOut(nnx.Module):
 
 # Helper function to create MambaOut models
 def mambaout_femto(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
-    """
-    Creates a MambaOut-Femto model.
+    """Creates a MambaOut-Femto model.
 
     Args:
         rngs: Random number generators for NNX modules.
@@ -415,8 +403,7 @@ def mambaout_femto(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
 
 
 def mambaout_kobe(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
-    """
-    Creates a MambaOut-Kobe model (Kobe Memorial Version with 24 Gated CNN blocks).
+    """Creates a MambaOut-Kobe model (Kobe Memorial Version with 24 Gated CNN blocks).
 
     Args:
         rngs: Random number generators for NNX modules.
@@ -435,8 +422,7 @@ def mambaout_kobe(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
 
 
 def mambaout_tiny(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
-    """
-    Creates a MambaOut-Tiny model.
+    """Creates a MambaOut-Tiny model.
 
     Args:
         rngs: Random number generators for NNX modules.
@@ -455,8 +441,7 @@ def mambaout_tiny(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
 
 
 def mambaout_small(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
-    """
-    Creates a MambaOut-Small model.
+    """Creates a MambaOut-Small model.
 
     Args:
         rngs: Random number generators for NNX modules.
@@ -475,8 +460,7 @@ def mambaout_small(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
 
 
 def mambaout_base(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:
-    """
-    Creates a MambaOut-Base model.
+    """Creates a MambaOut-Base model.
 
     Args:
         rngs: Random number generators for NNX modules.

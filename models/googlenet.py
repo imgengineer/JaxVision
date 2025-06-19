@@ -1,8 +1,7 @@
 import warnings
-from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
-from typing import Optional
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -12,8 +11,13 @@ from jax.image import ResizeMethod
 
 __all__ = ["GoogLeNet", "GoogLeNetOutputs", "_GoogLeNetOutputs", "googlenet"]
 
-GoogLeNetOutputs = namedtuple("GoogLeNetOutputs", ["logits", "aux_logits2", "aux_logits1"])
-GoogLeNetOutputs.__annotations__ = {"logits": Array, "aux_logits2": Optional[Array], "aux_logits1": Optional[Array]}  # noqa: UP007
+
+class GoogLeNetOutputs(NamedTuple):
+    logits: Array
+    aux_logits2: Array | None
+    aux_logits1: Array | None
+
+
 _GoogLeNetOutputs = GoogLeNetOutputs
 
 
@@ -21,13 +25,13 @@ class GoogLeNet(nnx.Module):
     def __init__(  # noqa: PLR0913
         self,
         num_classes: int = 1000,
-        aux_logits: bool = True,
-        transform_input: bool = False,
-        init_weights: bool | None = None,
         blocks: list[Callable[..., nnx.Module]] | None = None,
         dropout: float = 0.2,
         dropout_aux: float = 0.7,
         *,
+        aux_logits: bool = True,
+        transform_input: bool = False,
+        init_weights: bool | None = None,
         rngs: nnx.Rngs,
         deterministic: bool = False,
     ):

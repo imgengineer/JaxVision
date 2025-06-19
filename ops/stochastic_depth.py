@@ -46,14 +46,11 @@ class StochasticDepth(Module):
         )
         keep_prob = 1.0 - self.rate
         rng = rngs[self.rng_collection]()
-        if self.mode == "row":
-            # Zeroes randomly selected rows from the batch.
-            # Mask shape: (batch_size, 1, 1, ...) - broadcasting will handle the rest
-            broadcast_shape = (inputs.shape[0],) + (1,) * (inputs.ndim - 1)
-        else:
-            # Randomly zeroes the entire input.
-            # Mask shape: (1, 1, 1, ...) - will broadcast to input.shape
-            broadcast_shape = (1,) * inputs.ndim
+        # Zeroes randomly selected rows from the batch.
+        # Mask shape: (batch_size, 1, 1, ...) - broadcasting will handle the rest
+        # Randomly zeroes the entire input.
+        # Mask shape: (1, 1, 1, ...) - will broadcast to input.shape
+        broadcast_shape = (inputs.shape[0],) + (1,) * (inputs.ndim - 1) if self.mode == "row" else (1,) * inputs.ndim
 
         mask = jax.random.bernoulli(rng, p=keep_prob, shape=broadcast_shape)
         mask = jnp.broadcast_to(mask, inputs.shape)

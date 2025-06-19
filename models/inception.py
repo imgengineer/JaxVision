@@ -1,16 +1,20 @@
 import warnings
-from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
-from typing import Optional
+from typing import NamedTuple
 
 import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
 __all__ = ["Inception3", "inception_v3"]
-InceptionOutputs = namedtuple("InceptionOutputs", ["logits", "aux_logits"])
-InceptionOutputs.__annotations__ = {"logits": Array, "aux_logits": Optional[Array]}  # noqa: UP007
+
+
+class InceptionOutputs(NamedTuple):
+    logits: Array
+    aux_logits: Array | None
+
+
 _InceptionOutputs = InceptionOutputs
 
 
@@ -18,13 +22,13 @@ class Inception3(nnx.Module):
     def __init__(  # noqa: PLR0913
         self,
         num_classes: int = 1000,
-        aux_logits: bool = True,
-        transform_input: bool = False,
         inception_blocks: list[Callable[..., nnx.Module]] | None = None,
-        init_weights: bool | None = None,
         dropout: float = 0.5,
         *,
         rngs: nnx.Rngs,
+        init_weights: bool | None = None,
+        aux_logits: bool = True,
+        transform_input: bool = False,
         deterministic: bool = False,
     ) -> None:
         super().__init__()
@@ -40,7 +44,8 @@ class Inception3(nnx.Module):
             )
             init_weights = True
         if len(inception_blocks) != 7:  # noqa: PLR2004
-            raise ValueError(f"length of inception_blocks should be 7 instead of {len(inception_blocks)}")
+            msg = f"length of inception_blocks should be 7 instead of {len(inception_blocks)}"
+            raise ValueError(msg)
         self.deterministic = deterministic
 
         conv_block = inception_blocks[0]
@@ -119,9 +124,8 @@ class Inception3(nnx.Module):
         x = self.Mixed_6e(x)
         # N x 768 x 17 x 17
         aux: Array | None = None
-        if self.AuxLogits is not None:
-            if not self.deterministic:
-                aux = self.AuxLogits(x)
+        if self.AuxLogits is not None and not self.deterministic:
+            aux = self.AuxLogits(x)
         # N x 768 x 17 x 17
         x = self.Mixed_7a(x)
         # N x 1280 x 8 x 8
@@ -138,8 +142,7 @@ class Inception3(nnx.Module):
         # N x 1000 (num_classes)
         if not self.deterministic and self.aux_logits:
             return InceptionOutputs(x, aux)
-        else:
-            return x
+        return x
 
 
 class InceptionA(nnx.Module):
@@ -184,7 +187,11 @@ class InceptionA(nnx.Module):
 
 class InceptionB(nnx.Module):
     def __init__(
-        self, in_channels: int, conv_block: Callable[..., nnx.Module] | None = None, *, rngs: nnx.Rngs
+        self,
+        in_channels: int,
+        conv_block: Callable[..., nnx.Module] | None = None,
+        *,
+        rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
         if conv_block is None:
@@ -292,7 +299,11 @@ class InceptionD(nnx.Module):
 
 class InceptionE(nnx.Module):
     def __init__(
-        self, in_channels: int, conv_block: Callable[..., nnx.Module] | None = None, *, rngs: nnx.Rngs
+        self,
+        in_channels: int,
+        conv_block: Callable[..., nnx.Module] | None = None,
+        *,
+        rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
         if conv_block is None:
@@ -362,9 +373,8 @@ class InceptionAux(nnx.Module):
         # Adaptive average pooling
         x = x.mean(axis=(1, 2))
         # N x 768
-        x = self.fc(x)
+        return self.fc(x)
         # N x 1000
-        return x
 
 
 class BasicConv2d(nnx.Module):
@@ -380,5 +390,4 @@ class BasicConv2d(nnx.Module):
 
 
 def inception_v3(*, rngs: nnx.Rngs, **kwargs) -> Inception3:
-    model = Inception3(aux_logits=True, rngs=rngs, **kwargs)
-    return model
+    return Inception3(aux_logits=True, rngs=rngs, **kwargs)

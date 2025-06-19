@@ -3,7 +3,6 @@ from collections.abc import Callable
 from functools import partial
 from typing import NamedTuple
 
-import jax
 import jax.numpy as jnp
 from flax import nnx
 from jax import Array
@@ -49,7 +48,7 @@ class MLPBlock(MLP):
 
 
 class EncoderBlock(nnx.Module):
-    """Transformer encoder block"""
+    """Transformer encoder block."""
 
     def __init__(  # noqa: PLR0913
         self,
@@ -110,22 +109,22 @@ class Encoder(nnx.Module):
         super().__init__()
 
         self.pos_embedding = nnx.Param(
-            nnx.initializers.normal(stddev=0.02)(key=rngs.params(), shape=(1, seq_length, hidden_dim))
+            nnx.initializers.normal(stddev=0.02)(key=rngs.params(), shape=(1, seq_length, hidden_dim)),
         )
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         layers: list[nnx.Module] = []
-        for _ in range(num_layers):
-            layers.append(
-                EncoderBlock(
-                    num_heads,
-                    hidden_dim,
-                    mlp_dim,
-                    dropout,
-                    attention_dropout,
-                    norm_layer,
-                    rngs=rngs,
-                )
+        layers = [
+            EncoderBlock(
+                num_heads,
+                hidden_dim,
+                mlp_dim,
+                dropout,
+                attention_dropout,
+                norm_layer,
+                rngs=rngs,
             )
+            for _ in range(num_layers)
+        ]
         self.layers = nnx.Sequential(*layers)
         self.ln = norm_layer(hidden_dim, rngs=rngs)
 
@@ -187,7 +186,6 @@ class VisionTransformer(nnx.Module):
                 kernel_size=(1, 1),
                 rngs=rngs,
             )
-            self.conv_proj = None
         else:
             self.conv_proj = nnx.Conv(
                 3,
@@ -235,12 +233,12 @@ class VisionTransformer(nnx.Module):
                 self.conv_proj.bias_init = nnx.initializers.zeros_init()
         elif self.seq_proj_layers["conv_last"] is not None and isinstance(self.seq_proj_layers["conv_last"], nnx.Conv):
             self.seq_proj_layers["conv_last"].kernel_init = nnx.initializers.normal(
-                stddev=math.sqrt(2.0 / self.seq_proj_layers["conv_last"].out_features)
+                stddev=math.sqrt(2.0 / self.seq_proj_layers["conv_last"].out_features),
             )
         if hasattr(self.heads_layers, "pre_logits") and isinstance(self.heads_layers["pre_logits"], nnx.Linear):
             fan_in = self.heads_layers["pre_logits"].in_features
             self.heads_layers["pre_logits"].kernel_init = nnx.initializers.truncated_normal(
-                stddev=math.sqrt(1 / fan_in)
+                stddev=math.sqrt(1 / fan_in),
             )
             self.heads_layers["pre_logits"].bias_init = nnx.initializers.zeros_init()
         if isinstance(self.heads_layers["head"], nnx.Linear):
@@ -251,8 +249,7 @@ class VisionTransformer(nnx.Module):
         if "pre_logits" in layers_dict:
             x = layers_dict["pre_logits"](x)
             x = layers_dict["act"](x)
-        x = layers_dict["head"](x)
-        return x
+        return layers_dict["head"](x)
 
     def _process_input(self, x: Array) -> Array:
         n, h, w, c = x.shape

@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 from functools import partial
 from typing import Any
@@ -37,25 +36,27 @@ def _patch_merging_pad(x: Array) -> Array:
     x1 = x[..., 1::2, 0::2, :]  # ... H/2 W/2 C
     x2 = x[..., 0::2, 1::2, :]  # ... H/2 W/2 C
     x3 = x[..., 1::2, 1::2, :]  # ... H/2 W/2 C
-    x = jnp.concat([x0, x1, x2, x3], axis=-1)  # ... H/2 W/2 4*C
-    return x
+    return jnp.concat([x0, x1, x2, x3], axis=-1)  # ... H/2 W/2 4*C
 
 
 def _get_relative_position_bias(
-    relative_position_bias_table: Array, relative_position_index: Array, window_size: list[int]
+    relative_position_bias_table: Array,
+    relative_position_index: Array,
+    window_size: list[int],
 ) -> Array:
     N = window_size[0] * window_size[1]  # noqa: N806
     relative_position_bias = relative_position_bias_table[relative_position_index]  # type: ignore[index]
     relative_position_bias = relative_position_bias.reshape(N, N, -1)
-    relative_position_bias = jnp.expand_dims(relative_position_bias.transpose(2, 0, 1), axis=0)
-    return relative_position_bias
+    return jnp.expand_dims(relative_position_bias.transpose(2, 0, 1), axis=0)
 
 
 class PatchMerging(nnx.Module):
     """Patch Merging Layer.
+
     Args:
         dim (int): Number of input channels.
         norm_layer (nn.Module): Normalization layer. Default: nn.LayerNorm.
+
     """
 
     def __init__(
@@ -71,23 +72,25 @@ class PatchMerging(nnx.Module):
         self.norm = norm_layer(4 * dim, rngs=rngs)
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
-            x (Array): input tensor with expected layout of [..., H, W, C]
+        """Args:
+            x (Array): input tensor with expected layout of [..., H, W, C].
+
         Returns:
             Array with layout of [..., H/2, W/2, 2*C]
+
         """
         x = _patch_merging_pad(x)
         x = self.norm(x)
-        x = self.reduction(x)  # ... H/2 W/2 2*C
-        return x
+        return self.reduction(x)  # ... H/2 W/2 2*C
 
 
 class PatchMergingV2(nnx.Module):
     """Patch Merging Layer for Swin Transformer V2.
+
     Args:
         dim (int): Number of input channels.
         norm_layer (nn.Module): Normalization layer. Default: nn.LayerNorm.
+
     """
 
     def __init__(self, dim: int, norm_layer: Callable[..., nnx.Module] = nnx.LayerNorm, *, rngs: nnx.Rngs):
@@ -97,16 +100,16 @@ class PatchMergingV2(nnx.Module):
         self.norm = norm_layer(2 * dim, rngs=rngs)  # difference
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
-            x (Array): input tensor with expected layout of [..., H, W, C]
+        """Args:
+            x (Array): input tensor with expected layout of [..., H, W, C].
+
         Returns:
             Array with layout of [..., H/2, W/2, 2*C]
+
         """
         x = _patch_merging_pad(x)
         x = self.reduction(x)  # ... H/2 W/2 2*C
-        x = self.norm(x)
-        return x
+        return self.norm(x)
 
 
 def shifted_window_attention(  # noqa: PLR0913, PLR0915
@@ -122,13 +125,13 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
     qkv_bias: Array | None = None,
     proj_bias: Array | None = None,
     logit_scale: Array | None = None,
-    deterministic: bool = False,
     *,
+    deterministic: bool = False,
     rngs: nnx.Rngs,
 ) -> Array:
-    """
-    Window based multi-head self attention (W-MSA) module with relative position bias.
+    """Window based multi-head self attention (W-MSA) module with relative position bias.
     It supports both of shifted and non-shifted window.
+
     Args:
         input (Array[N, H, W, C]): The input tensor or 4-dimensions.
         qkv_weight (Array[in_dim, out_dim]): The weight tensor of query, key, value.
@@ -143,8 +146,10 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
         proj_bias (Tensor[out_dim], optional): The bias tensor of projection. Default: None.
         logit_scale (Tensor[out_dim], optional): Logit scale of cosine attention for Swin Transformer V2. Default: None.
         training (bool, optional): Training flag used by the dropout parameters. Default: True.
+
     Returns:
         Array[N, H, W, C]: The output tensor after shifted window attention.
+
     """
     B, H, W, C = inputs.shape  # noqa: N806
     # pad feature maps to multiples of window size
@@ -186,7 +191,10 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
     if logit_scale is not None:
         # cosine attention
         attn = jnp.linalg.norm(q, axis=-1, keepdims=True) @ jnp.linalg.norm(k, axis=-1, keepdims=True).transpose(
-            0, 1, 3, 2
+            0,
+            1,
+            3,
+            2,
         )
         logit_scale = jnp.exp(jnp.clip(logit_scale, a_max=jnp.log(100.0)))
         attn = attn * logit_scale
@@ -230,14 +238,11 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
         x = jnp.roll(x, shift=(shift_size[0], shift_size[1]), axis=(1, 2))
 
     # unpad features
-    x = x[:, :H, :W, :]
-    return x
+    return x[:, :H, :W, :]
 
 
 class ShiftedWindowAttention(nnx.Module):
-    """
-    See :func:`shifted_window_attention`.
-    """
+    """See :func:`shifted_window_attention`."""
 
     def __init__(  # noqa: PLR0913
         self,
@@ -245,17 +250,18 @@ class ShiftedWindowAttention(nnx.Module):
         window_size: list[int],
         shift_size: list[int],
         num_heads: int,
-        qkv_bias: bool = True,
-        proj_bias: bool = True,
         attention_dropout: float = 0.0,
         dropout: float = 0.0,
-        deterministic: bool = False,
         *,
+        qkv_bias: bool = True,
+        proj_bias: bool = True,
+        deterministic: bool = False,
         rngs: nnx.Rngs,
     ):
         super().__init__()
         if len(window_size) != 2 or len(shift_size) != 2:  # noqa: PLR2004
-            raise ValueError("window_size and shift_size must be of length 2")
+            msg = "window_size and shift_size must be of length 2"
+            raise ValueError(msg)
         self.window_size = window_size
         self.shift_size = shift_size
         self.num_heads = num_heads
@@ -276,7 +282,7 @@ class ShiftedWindowAttention(nnx.Module):
             nnx.initializers.zeros(
                 self.rngs.params(),
                 shape=((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
-            )
+            ),
         )
         # 2*Wh-1 * 2*Ww-1, nH
         # nn.init.trunc_normal_(self.relative_position_bias_table, std=0.02)
@@ -313,11 +319,12 @@ class ShiftedWindowAttention(nnx.Module):
         )
 
     def __call__(self, x: Array) -> Array:
-        """
-        Args:
-            x (Tensor): Tensor with layout of [B, H, W, C]
+        """Args:
+            x (Tensor): Tensor with layout of [B, H, W, C].
+
         Returns:
             Tensor with same layout as input, i.e. [B, H, W, C]
+
         """
         relative_position_bias = self.get_relative_position_bias()
         return shifted_window_attention(
@@ -338,9 +345,7 @@ class ShiftedWindowAttention(nnx.Module):
 
 
 class ShiftedWindowAttentionV2(ShiftedWindowAttention):
-    """
-    See :func:`shifted_window_attention_v2`.
-    """
+    """See :func:`shifted_window_attention_v2`."""
 
     def __init__(  # noqa: PLR0913
         self,
@@ -348,12 +353,12 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         window_size: list[int],
         shift_size: list[int],
         num_heads: int,
-        qkv_bias: bool = True,
-        proj_bias: bool = True,
         attention_dropout: float = 0.0,
         dropout: float = 0.0,
-        deterministic: bool = False,
         *,
+        qkv_bias: bool = True,
+        proj_bias: bool = True,
+        deterministic: bool = False,
         rngs: nnx.Rngs,
     ):
         super().__init__(
@@ -365,6 +370,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             proj_bias=proj_bias,
             attention_dropout=attention_dropout,
             dropout=dropout,
+            deterministic=deterministic,
             rngs=rngs,
         )
 
@@ -385,14 +391,15 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         relative_coords_w = jnp.arange(-(self.window_size[1] - 1), self.window_size[1], dtype=jnp.float32)
         relative_coords_table = jnp.stack(jnp.meshgrid(relative_coords_h, relative_coords_w, indexing="ij"))
         relative_coords_table = jnp.expand_dims(
-            relative_coords_table.transpose(1, 2, 0), axis=0
+            relative_coords_table.transpose(1, 2, 0),
+            axis=0,
         )  # 1, 2*Wh-1, 2*Ww-1, 2
 
         relative_coords_table = relative_coords_table.at[:, :, :, 0].set(
-            relative_coords_table[:, :, :, 0] / (self.window_size[0] - 1)
+            relative_coords_table[:, :, :, 0] / (self.window_size[0] - 1),
         )
         relative_coords_table = relative_coords_table.at[:, :, :, 1].set(
-            relative_coords_table[:, :, :, 1] / (self.window_size[1] - 1)
+            relative_coords_table[:, :, :, 1] / (self.window_size[1] - 1),
         )
 
         relative_coords_table *= 8  # normalize to -8, 8
@@ -405,15 +412,15 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             self.relative_position_index,  # type: ignore[arg-type]
             self.window_size,
         )
-        relative_position_bias = 16 * nnx.sigmoid(relative_position_bias)
-        return relative_position_bias
+        return 16 * nnx.sigmoid(relative_position_bias)
 
     def __call__(self, x: Array):
-        """
-        Args:
-            x (Tensor): Tensor with layout of [B, H, W, C]
+        """Args:
+            x (Tensor): Tensor with layout of [B, H, W, C].
+
         Returns:
             Tensor with same layout as input, i.e. [B, H, W, C]
+
         """
         relative_position_bias = self.get_relative_position_bias()
         return shifted_window_attention(
@@ -435,8 +442,8 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
 
 
 class SwinTransformerBlock(nnx.Module):
-    """
-    Swin Transformer Block.
+    """Swin Transformer Block.
+
     Args:
         dim (int): Number of input channels.
         num_heads (int): Number of attention heads.
@@ -448,6 +455,7 @@ class SwinTransformerBlock(nnx.Module):
         stochastic_depth_prob: (float): Stochastic depth rate. Default: 0.0.
         norm_layer (nn.Module): Normalization layer.  Default: nn.LayerNorm.
         attn_layer (nn.Module): Attention layer. Default: ShiftedWindowAttention
+
     """
 
     def __init__(  # noqa: PLR0913
@@ -489,13 +497,12 @@ class SwinTransformerBlock(nnx.Module):
 
     def __call__(self, x: Array) -> Array:
         x = x + self.stochastic_depth(self.attn(self.norm1(x)))
-        x = x + self.stochastic_depth(self.mlp(self.norm2(x)))
-        return x
+        return x + self.stochastic_depth(self.mlp(self.norm2(x)))
 
 
 class SwinTransformerBlockV2(SwinTransformerBlock):
-    """
-    Swin Transformer V2 Block.
+    """Swin Transformer V2 Block.
+
     Args:
         dim (int): Number of input channels.
         num_heads (int): Number of attention heads.
@@ -507,6 +514,7 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
         stochastic_depth_prob: (float): Stochastic depth rate. Default: 0.0.
         norm_layer (nn.Module): Normalization layer.  Default: nn.LayerNorm.
         attn_layer (nn.Module): Attention layer. Default: ShiftedWindowAttentionV2.
+
     """
 
     def __init__(  # noqa: PLR0913
@@ -542,14 +550,13 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
         # Here is the difference, we apply norm after the attention in V2.
         # In V1 we applied norm before the attention.
         x = x + self.stochastic_depth(self.norm1(self.attn(x)))
-        x = x + self.stochastic_depth(self.norm2(self.mlp(x)))
-        return x
+        return x + self.stochastic_depth(self.norm2(self.mlp(x)))
 
 
 class SwinTransformer(nnx.Module):
-    """
-    Implements Swin Transformer from the `"Swin Transformer: Hierarchical Vision Transformer using
+    """Implements Swin Transformer from the `"Swin Transformer: Hierarchical Vision Transformer using
     Shifted Windows" <https://arxiv.org/abs/2103.14030>`_ paper.
+
     Args:
         patch_size (list[int]): Patch size.
         embed_dim (int): Patch embedding dimension.
@@ -564,6 +571,7 @@ class SwinTransformer(nnx.Module):
         block (nn.Module, optional): SwinTransformer Block. Default: None.
         norm_layer (nn.Module, optional): Normalization layer. Default: None.
         downsample_layer (nn.Module): Downsample layer (patch merging). Default: PatchMerging.
+
     """
 
     def __init__(  # noqa: PLR0913
@@ -604,7 +612,7 @@ class SwinTransformer(nnx.Module):
                     rngs=rngs,
                 ),
                 norm_layer(embed_dim, rngs=rngs),
-            )
+            ),
         )
 
         total_stage_blocks = sum(depths)
@@ -628,7 +636,7 @@ class SwinTransformer(nnx.Module):
                         stochastic_depth_prob=sd_prob,
                         norm_layer=norm_layer,
                         rngs=rngs,
-                    )
+                    ),
                 )
                 stage_block_id += 1
             layers.append(nnx.Sequential(*stage))
@@ -651,8 +659,7 @@ class SwinTransformer(nnx.Module):
         x = self.features(x)
         x = self.norm(x)
         x = x.mean(axis=(1, 2))
-        x = self.head(x)
-        return x
+        return self.head(x)
 
 
 def _swin_transformer(  # noqa: PLR0913
@@ -666,7 +673,7 @@ def _swin_transformer(  # noqa: PLR0913
     rngs: nnx.Rngs,
     **kwargs: Any,
 ) -> SwinTransformer:
-    model = SwinTransformer(
+    return SwinTransformer(
         patch_size=patch_size,
         embed_dim=embed_dim,
         depths=depths,
@@ -676,12 +683,10 @@ def _swin_transformer(  # noqa: PLR0913
         rngs=rngs,
         **kwargs,
     )
-    return model
 
 
 def swin_t(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
-    """
-    Constructs a swin_tiny architecture from
+    """Constructs a swin_tiny architecture from
     `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows <https://arxiv.org/abs/2103.14030>`_.
 
     Args:
@@ -699,8 +704,8 @@ def swin_t(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
     .. autoclass:: torchvision.models.Swin_T_Weights
         :members:
-    """
 
+    """
     return _swin_transformer(
         patch_size=[4, 4],
         embed_dim=96,
@@ -714,8 +719,7 @@ def swin_t(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
 
 def swin_s(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
-    """
-    Constructs a swin_small architecture from
+    """Constructs a swin_small architecture from
     `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows <https://arxiv.org/abs/2103.14030>`_.
 
     Args:
@@ -733,8 +737,8 @@ def swin_s(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
     .. autoclass:: torchvision.models.Swin_S_Weights
         :members:
-    """
 
+    """
     return _swin_transformer(
         patch_size=[4, 4],
         embed_dim=96,
@@ -748,8 +752,7 @@ def swin_s(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
 
 def swin_b(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
-    """
-    Constructs a swin_base architecture from
+    """Constructs a swin_base architecture from
     `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows <https://arxiv.org/abs/2103.14030>`_.
 
     Args:
@@ -767,8 +770,8 @@ def swin_b(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
     .. autoclass:: torchvision.models.Swin_B_Weights
         :members:
-    """
 
+    """
     return _swin_transformer(
         patch_size=[4, 4],
         embed_dim=128,
@@ -782,8 +785,7 @@ def swin_b(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
 
 def swin_v2_t(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
-    """
-    Constructs a swin_v2_tiny architecture from
+    """Constructs a swin_v2_tiny architecture from
     `Swin Transformer V2: Scaling Up Capacity and Resolution <https://arxiv.org/abs/2111.09883>`_.
 
     Args:
@@ -801,8 +803,8 @@ def swin_v2_t(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
     .. autoclass:: torchvision.models.Swin_V2_T_Weights
         :members:
-    """
 
+    """
     return _swin_transformer(
         patch_size=[4, 4],
         embed_dim=96,
@@ -818,8 +820,7 @@ def swin_v2_t(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
 
 def swin_v2_s(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
-    """
-    Constructs a swin_v2_small architecture from
+    """Constructs a swin_v2_small architecture from
     `Swin Transformer V2: Scaling Up Capacity and Resolution <https://arxiv.org/abs/2111.09883>`_.
 
     Args:
@@ -837,8 +838,8 @@ def swin_v2_s(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
     .. autoclass:: torchvision.models.Swin_V2_S_Weights
         :members:
-    """
 
+    """
     return _swin_transformer(
         patch_size=[4, 4],
         embed_dim=96,
@@ -854,8 +855,7 @@ def swin_v2_s(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
 
 def swin_v2_b(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
-    """
-    Constructs a swin_v2_base architecture from
+    """Constructs a swin_v2_base architecture from
     `Swin Transformer V2: Scaling Up Capacity and Resolution <https://arxiv.org/abs/2111.09883>`_.
 
     Args:
@@ -873,8 +873,8 @@ def swin_v2_b(*, rngs: nnx.Rngs, **kwargs: Any) -> SwinTransformer:
 
     .. autoclass:: torchvision.models.Swin_V2_B_Weights
         :members:
-    """
 
+    """
     return _swin_transformer(
         patch_size=[4, 4],
         embed_dim=128,

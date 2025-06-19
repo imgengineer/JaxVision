@@ -80,17 +80,16 @@ class _DenseBlock(nnx.Module):
         rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
-        layers: list[nnx.Module] = []
-        for i in range(num_layers):
-            layers.append(
-                _DenseLayer(
-                    num_input_features + i * growth_rate,
-                    growth_rate=growth_rate,
-                    bn_size=bn_size,
-                    drop_rate=drop_rate,
-                    rngs=rngs,
-                )
+        layers = [
+            _DenseLayer(
+                num_input_features + i * growth_rate,
+                growth_rate=growth_rate,
+                bn_size=bn_size,
+                drop_rate=drop_rate,
+                rngs=rngs,
             )
+            for i in range(num_layers)
+        ]
         self.layers = layers
 
     def __call__(self, init_features: Array) -> Array:
@@ -120,8 +119,7 @@ class _Transition(nnx.Sequential):
 
 
 class DenseNet(nnx.Module):
-    r"""
-    Densenet-BC model class, based on
+    r"""Densenet-BC model class, based on
     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_.
 
     Args:

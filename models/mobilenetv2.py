@@ -44,7 +44,7 @@ class InvertedResidual(nnx.Module):
                     norm_layer=norm_layer,
                     activation_layer=nnx.relu6,
                     rngs=rngs,
-                )
+                ),
             )
         layers.extend(
             [
@@ -69,7 +69,7 @@ class InvertedResidual(nnx.Module):
                     rngs=rngs,
                 ),
                 norm_layer(oup, rngs=rngs),
-            ]
+            ],
         )
         self.conv = nnx.Sequential(*layers)
         self.out_channels = oup
@@ -94,8 +94,7 @@ class MobileNetV2(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        """
-        MobileNet V2 main class
+        """MobileNet V2 main class.
 
         Args:
             num_classes (int): Number of classes
@@ -149,7 +148,7 @@ class MobileNetV2(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=nnx.relu6,
                 rngs=rngs,
-            )
+            ),
         ]
 
         # building inverted residual blocks
@@ -165,7 +164,7 @@ class MobileNetV2(nnx.Module):
                         expand_ratio=t,
                         norm_layer=norm_layer,
                         rngs=rngs,
-                    )
+                    ),
                 )
                 input_channel = output_channel
         # building last several layers
@@ -177,7 +176,7 @@ class MobileNetV2(nnx.Module):
                 norm_layer=norm_layer,
                 activation_layer=nnx.relu6,
                 rngs=rngs,
-            )
+            ),
         )
 
         # make it nnx.Sequential

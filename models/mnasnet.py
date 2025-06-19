@@ -30,9 +30,11 @@ class _InvertedResidual(nnx.Module):
     ) -> None:
         super().__init__()
         if stride not in [1, 2]:
-            raise ValueError(f"stride should be 1 or 2 instead of {stride}")
+            msg = f"stride should be 1 or 2 instead of {stride}"
+            raise ValueError(msg)
         if kernel_size not in [3, 5]:
-            raise ValueError(f"kernel_size should be 3 or 5 instead of {kernel_size}")
+            msg = f"kernel_size should be 3 or 5 instead of {kernel_size}"
+            raise ValueError(msg)
         mid_ch = in_ch * expansion_factor
         self.apply_residual = in_ch == out_ch and stride == 1
         self.layers = nnx.Sequential(
@@ -61,8 +63,7 @@ class _InvertedResidual(nnx.Module):
     def __call__(self, x: Array) -> Array:
         if self.apply_residual:
             return self.layers(x) + x
-        else:
-            return self.layers(x)
+        return self.layers(x)
 
 
 def _stack(  # noqa: PLR0913
@@ -78,30 +79,34 @@ def _stack(  # noqa: PLR0913
 ) -> nnx.Sequential:
     """Creates a stack of inverted residuals."""
     if repeats < 1:
-        raise ValueError(f"repeats should be >= 1, instead got {repeats}")
+        msg = f"repeats should be >= 1, instead got {repeats}"
+        raise ValueError(msg)
     # First one has no skip, because feature map size changes.
     first = _InvertedResidual(in_ch, out_ch, kernel_size, stride, exp_factor, bn_momentum=bn_momentum, rngs=rngs)
     remaining = []
-    for _ in range(1, repeats):
-        remaining.append(
-            _InvertedResidual(out_ch, out_ch, kernel_size, 1, exp_factor, bn_momentum=bn_momentum, rngs=rngs)
-        )
+    remaining = [
+        _InvertedResidual(out_ch, out_ch, kernel_size, 1, exp_factor, bn_momentum=bn_momentum, rngs=rngs)
+        for _ in range(1, repeats)
+    ]
     return nnx.Sequential(first, *remaining)
 
 
 def _round_to_multiple_of(val: float, divisor: int, round_up_bias: float = 0.9) -> int:
     """Asymmetric rounding to make `val` divisible by `divisor`. With default
     bias, will round up, unless the number is no more than 10% greater than the
-    smaller divisible value, i.e. (83, 8) -> 80, but (84, 8) -> 88."""
+    smaller divisible value, i.e. (83, 8) -> 80, but (84, 8) -> 88.
+    """
     if not 0.0 < round_up_bias < 1.0:
-        raise ValueError(f"round_up_bias should be greater than 0.0 and smaller than 1.0 instead of {round_up_bias}")
+        msg = f"round_up_bias should be greater than 0.0 and smaller than 1.0 instead of {round_up_bias}"
+        raise ValueError(msg)
     new_val = max(divisor, int(val + divisor / 2) // divisor * divisor)
     return new_val if new_val >= round_up_bias * val else new_val + divisor
 
 
 def _get_depths(alpha: float) -> list[int]:
     """Scales tensor depths as in reference MobileNet code, prefers rounding up
-    rather than down."""
+    rather than down.
+    """
     depths = [32, 16, 24, 40, 80, 96, 192, 320]
     return [_round_to_multiple_of(depth * alpha, 8) for depth in depths]
 
@@ -115,7 +120,7 @@ class MNASNet(nnx.Module):
     >>> y.dim()
     2
     >>> y.nelement()
-    1000
+    1000.
     """
 
     # Version 2 adds depth scaling in the initial stages of the network.
@@ -131,7 +136,8 @@ class MNASNet(nnx.Module):
     ) -> None:
         super().__init__()
         if alpha <= 0.0:
-            raise ValueError(f"alpha should be greater than 0.0 instead of {alpha}")
+            msg = f"alpha should be greater than 0.0 instead of {alpha}"
+            raise ValueError(msg)
         self.alpha = alpha
         self.num_classes = num_classes
         depths = _get_depths(alpha)
@@ -154,7 +160,13 @@ class MNASNet(nnx.Module):
             nnx.BatchNorm(depths[0], momentum=_BN_MOMENTUM, rngs=rngs),
             nnx.relu,
             nnx.Conv(
-                depths[0], depths[1], kernel_size=(1, 1), padding="SAME", strides=(1, 1), use_bias=False, rngs=rngs
+                depths[0],
+                depths[1],
+                kernel_size=(1, 1),
+                padding="SAME",
+                strides=(1, 1),
+                use_bias=False,
+                rngs=rngs,
             ),
             nnx.BatchNorm(depths[1], momentum=_BN_MOMENTUM, rngs=rngs),
             # MNASNet blocks: stacks of inverted residuals.
@@ -191,9 +203,8 @@ class MNASNet(nnx.Module):
 
 
 def _mnasnet(alpha: float, *, rngs: nnx.Rngs, **kwargs: Any) -> MNASNet:
-    model = MNASNet(alpha, rngs=rngs, **kwargs)
+    return MNASNet(alpha, rngs=rngs, **kwargs)
 
-    return model
 
 
 def mnasnet0_5(*, rngs: nnx.Rngs, **kwargs: Any) -> MNASNet:
@@ -216,8 +227,8 @@ def mnasnet0_5(*, rngs: nnx.Rngs, **kwargs: Any) -> MNASNet:
 
     .. autoclass:: torchvision.models.MNASNet0_5_Weights
         :members:
-    """
 
+    """
     return _mnasnet(0.5, rngs=rngs, **kwargs)
 
 
@@ -241,8 +252,8 @@ def mnasnet0_75(*, rngs: nnx.Rngs, **kwargs: Any) -> MNASNet:
 
     .. autoclass:: torchvision.models.MNASNet0_75_Weights
         :members:
-    """
 
+    """
     return _mnasnet(0.75, rngs=rngs, **kwargs)
 
 
@@ -266,8 +277,8 @@ def mnasnet1_0(*, rngs: nnx.Rngs, **kwargs: Any) -> MNASNet:
 
     .. autoclass:: torchvision.models.MNASNet1_0_Weights
         :members:
-    """
 
+    """
     return _mnasnet(1.0, rngs=rngs, **kwargs)
 
 
@@ -291,6 +302,6 @@ def mnasnet1_3(*, rngs: nnx.Rngs, **kwargs: Any) -> MNASNet:
 
     .. autoclass:: torchvision.models.MNASNet1_3_Weights
         :members:
-    """
 
+    """
     return _mnasnet(1.3, rngs=rngs, **kwargs)

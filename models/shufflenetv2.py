@@ -108,8 +108,8 @@ class InvertedResidual(nnx.Module):
         kernel_size: tuple[int, int],
         stride: int = 1,
         padding: tuple[int, int] = (0, 0),
-        bias: bool = False,
         *,
+        bias: bool = False,
         rngs: nnx.Rngs,
     ) -> nnx.Conv:
         return nnx.Conv(i, o, kernel_size, stride, padding=padding, use_bias=bias, rngs=rngs)
@@ -168,11 +168,13 @@ class ShuffleNetV2(nnx.Module):
         self.stage4: nnx.Sequential
         stage_names = [f"stage{i}" for i in [2, 3, 4]]
         for name, repeats, output_channels in zip(
-            stage_names, stages_repeats, self._stage_out_channels[1:], strict=False
+            stage_names,
+            stages_repeats,
+            self._stage_out_channels[1:],
+            strict=False,
         ):
             seq = [inverted_residual(input_channels, output_channels, 2, rngs=rngs)]
-            for _i in range(repeats - 1):
-                seq.append(inverted_residual(output_channels, output_channels, 1, rngs=rngs))
+            seq.extend([inverted_residual(output_channels, output_channels, 1, rngs=rngs) for _ in range(repeats - 1)])
             setattr(self, name, nnx.Sequential(*seq))
             input_channels = output_channels
 

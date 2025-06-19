@@ -9,7 +9,7 @@ __all__ = ["SqueezeNet", "squeezenet1_0", "squeezenet1_1"]
 
 class Fire(nnx.Module):
     def __init__(
-        self, inplanes: int, squeeze_planes: int, expand1x1_planes: int, expand3x3_planes: int, *, rngs: nnx.Rngs
+        self, inplanes: int, squeeze_planes: int, expand1x1_planes: int, expand3x3_planes: int, *, rngs: nnx.Rngs,
     ) -> None:
         super().__init__()
         self.inplanes = inplanes
@@ -63,7 +63,8 @@ class SqueezeNet(nnx.Module):
                 Fire(512, 64, 256, 256, rngs=rngs),
             )
         else:
-            raise ValueError(f"Unsupported SqueezeNet version {version}: 1_0 or 1_1 expected")
+            msg = f"Unsupported SqueezeNet version {version}: 1_0 or 1_1 expected"
+            raise ValueError(msg)
 
         final_conv = nnx.Conv(512, self.num_classes, kernel_size=(1, 1), rngs=rngs)
         self.classifier = nnx.Sequential(
@@ -84,8 +85,7 @@ class SqueezeNet(nnx.Module):
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = self.classifier(x)
-        x = x.mean(axis=(1, 2))
-        return x
+        return x.mean(axis=(1, 2))
 
 
 def _squeezenet(

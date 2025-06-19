@@ -29,24 +29,19 @@ params = {
     "seed": 42,
     "num_workers": 8,
     "num_classes": 16,
-    "train_data_path": "./MpoxData/train",
-    "val_data_path": "./MpoxData/validation",
-    "checkpoint_dir": "/Users/billy/Documents/DLStudy/JaxVision/checkpoints",
+    "train_data_path": Path("./MpoxData/train"),
+    "val_data_path": Path("./MpoxData/validation"),
+    "checkpoint_dir": Path("/Users/billy/Documents/DLStudy/JaxVision/checkpoints"),
 }
 
 
 def set_seed(seed):
-    """Set random seeds for reproducibility"""
-    np.random.seed(seed)
+    """Set random seeds for reproducibility."""
+    np.random.default_rng(seed)
     random.seed(seed)
 
 
-def create_transforms(target_size, is_training=True) -> A.Compose:
-    """
-    为皮肤病图像创建数据增强变换。
-
-    考虑了皮肤病图像的特定需求，旨在保留病灶特征并增加数据多样性。
-    """  # noqa: RUF002
+def create_transforms(target_size, *, is_training=True) -> A.Compose:
     transforms_list = [
         A.Resize(height=target_size, width=target_size, p=1.0),
     ]
@@ -70,7 +65,7 @@ def create_transforms(target_size, is_training=True) -> A.Compose:
                     ratio=(0.75, 1.33),
                     p=0.5,
                 ),
-            ]
+            ],
         )
 
     transforms_list.append(
@@ -78,14 +73,14 @@ def create_transforms(target_size, is_training=True) -> A.Compose:
             mean=[0.485, 0.456, 0.406],  # ImageNet 均值
             std=[0.229, 0.224, 0.225],  # ImageNet 标准差
             max_pixel_value=255.0,
-        )
+        ),
     )
 
     return A.Compose(transforms_list)
 
 
 def create_datasets(params):
-    """Create training and validation datasets"""
+    """Create training and validation datasets."""
     train_dataset = ImageFolderDataSource(params["train_data_path"])
 
     val_dataset = ImageFolderDataSource(params["val_data_path"])
@@ -94,7 +89,7 @@ def create_datasets(params):
 
 
 def create_dataloaders(train_dataset, val_dataset, params):
-    """Create data loaders"""
+    """Create data loaders."""
 
     def create_batch_fn(batch):
         images, labels = zip(*batch, strict=True)
@@ -130,12 +125,12 @@ def create_dataloaders(train_dataset, val_dataset, params):
 
 
 def create_model(seed, num_classes):
-    """Create a new model"""
+    """Create a new model."""
     return resnet18(rngs=nnx.Rngs(seed), num_classes=num_classes)
 
 
 def create_optimizer(model, learining_rate: float, weight_decay: float):
-    """Create an optimizer for the model"""
+    """Create an optimizer for the model."""
     return nnx.Optimizer(
         model,
         optax.adamw(
@@ -146,7 +141,7 @@ def create_optimizer(model, learining_rate: float, weight_decay: float):
 
 
 def save_model(model, path_str: str):
-    """Save model state"""
+    """Save model state."""
     model_path = Path(path_str)
     model_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     checkpointer = ocp.PyTreeCheckpointer()
@@ -155,7 +150,7 @@ def save_model(model, path_str: str):
 
 
 def load_model(path, num_classes):
-    """Load model from checkpoint"""
+    """Load model from checkpoint."""
     model = nnx.eval_shape(lambda: create_model(0, num_classes))
     state = nnx.state(model)
 
@@ -167,7 +162,7 @@ def load_model(path, num_classes):
 
 
 def loss_fn(model, batch):
-    """Calculate loss and logits"""
+    """Calculate loss and logits."""
     images, labels = batch
     logits = model(images)
     loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
@@ -176,7 +171,7 @@ def loss_fn(model, batch):
 
 @nnx.jit
 def train_step(model, optimizer, metrics, batch):
-    """Single training step"""
+    """Single training step."""
     # Convert numpy arrays to jnp.array on GPU
     x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
     grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
@@ -187,7 +182,7 @@ def train_step(model, optimizer, metrics, batch):
 
 @nnx.jit
 def eval_step(model, metrics, batch):
-    """Single evaluation step"""
+    """Single evaluation step."""
     # convert numpy arrays to jnp.array on GPU
     x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
     loss, logits = loss_fn(model, (x, y_true))
@@ -195,7 +190,7 @@ def eval_step(model, metrics, batch):
 
 
 def print_dataset_info(train_dataset, val_dataset):
-    """Print dataset information"""
+    """Print dataset information."""
     print("📊 Dataset Info:")
     print(f"  Train samples: {len(train_dataset)}")
     print(f"  Validation samples: {len(val_dataset)}")
@@ -204,7 +199,7 @@ def print_dataset_info(train_dataset, val_dataset):
 
 
 def main():
-    """Main training function"""
+    """Main training function."""
     set_seed(params["seed"])
 
     print("🚀 Starting training with ResNet18...")
@@ -242,7 +237,7 @@ def main():
     best_acc = -1.0
 
     # Training loop
-    csv_path = os.path.join(params["checkpoint_dir"], "train_log.csv")
+    csv_path = params["checkpoint_dir"] / "train_log.csv"
     with Path.open(csv_path, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
@@ -274,14 +269,10 @@ def main():
         current_acc = float(val_result["accuracy"])
         if current_acc > best_acc:
             best_acc = current_acc
-            checkpoint_path = os.path.join(
-                params["checkpoint_dir"],
-                f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}",
-                "state",
-            )
+            checkpoint_path = params["checkpoint_dir"] / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
             save_model(model, checkpoint_path)
             print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
-        with open(csv_path, mode="a", newline="") as f:
+        with Path.open(csv_path, mode="a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(
                 [
@@ -290,7 +281,7 @@ def main():
                     train_result["accuracy"],
                     val_result["loss"],
                     val_result["accuracy"],
-                ]
+                ],
             )
     print("\n🎯 Training completed!")
     print(f"🏆 Best validation accuracy: {best_acc * 100:.6f}%")

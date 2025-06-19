@@ -38,8 +38,8 @@ class ImageFolderDataSource:
             msg = f"No valid images found in directory '{self.root_dir}'"
             raise RuntimeError(msg)
 
-    def __len__(self) -> int:
+    def __len__(self) -> int:  # noqa: D105
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[str, int]:
+    def __getitem__(self, index: int) -> tuple[str, int]:  # noqa: D105
         return self.samples[index]
