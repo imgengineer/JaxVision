@@ -5,6 +5,14 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
+__all__ = [
+    "ShuffleNetV2",
+    "shufflenet_v2_x0_5",
+    "shufflenet_v2_x1_0",
+    "shufflenet_v2_x1_5",
+    "shufflenet_v2_x2_0",
+]
+
 
 def channel_shuffle(x: Array, groups: int) -> Array:
     bacth_size, height, width, num_channels = x.shape
@@ -30,7 +38,7 @@ class InvertedResidual(nnx.Module):
 
         branch_features = oup // 2
         if (self.stride == 1) and (inp != branch_features << 1):
-            msg = f"Invalid combination of stride {stride},inp {inp} and oup {oup} values. If stride == 1 the inp should be equal to oup // 2 << 1"
+            msg = f"Invalid combination of stride {stride},inp {inp} and oup {oup} values. If stride == 1 the inp should be equal to oup // 2 << 1"  # noqa: E501
             raise ValueError(msg)
 
         if self.stride > 1:
@@ -100,7 +108,7 @@ class InvertedResidual(nnx.Module):
         kernel_size: tuple[int, int],
         stride: int = 1,
         padding: tuple[int, int] = (0, 0),
-        bias: bool = False,  # noqa: FBT001, FBT002
+        bias: bool = False,
         *,
         rngs: nnx.Rngs,
     ) -> nnx.Conv:
@@ -164,9 +172,7 @@ class ShuffleNetV2(nnx.Module):
         ):
             seq = [inverted_residual(input_channels, output_channels, 2, rngs=rngs)]
             for _i in range(repeats - 1):
-                seq.append(  # noqa: PERF401
-                    inverted_residual(output_channels, output_channels, 1, rngs=rngs)
-                )
+                seq.append(inverted_residual(output_channels, output_channels, 1, rngs=rngs))
             setattr(self, name, nnx.Sequential(*seq))
             input_channels = output_channels
 
@@ -194,7 +200,7 @@ class ShuffleNetV2(nnx.Module):
         x = self.stage3(x)
         x = self.stage4(x)
         x = self.conv5(x)
-        x = jnp.mean(x, axis=(1, 2))
+        x = x.mean(axis=(1, 2))
         return self.fc(x)
 
 

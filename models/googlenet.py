@@ -1,5 +1,7 @@
+from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -7,19 +9,25 @@ from flax import nnx
 from jax import Array
 from jax.image import ResizeMethod
 
+__all__ = ["GoogLeNet", "GoogLeNetOutputs", "_GoogLeNetOutputs", "googlenet"]
+
+GoogLeNetOutputs = namedtuple("GoogLeNetOutputs", ["logits", "aux_logits2", "aux_logits1"])
+GoogLeNetOutputs.__annotations__ = {"logits": Array, "aux_logits2": Optional[Array], "aux_logits1": Optional[Array]}  # noqa: UP007
+_GoogLeNetOutputs = GoogLeNetOutputs
+
 
 class GoogLeNet(nnx.Module):
     def __init__(  # noqa: PLR0913
         self,
         num_classes: int = 1000,
-        aux_logits: bool = True,  # noqa: FBT001, FBT002
-        transform_input: bool = False,  # noqa: FBT001, FBT002
+        aux_logits: bool = True,
+        transform_input: bool = False,
         blocks: list[Callable[..., nnx.Module]] | None = None,
         dropout: float = 0.2,
         dropout_aux: float = 0.7,
         *,
         rngs: nnx.Rngs,
-        training: bool = True,
+        deterministic: bool = False,
     ):
         super().__init__()
         if blocks is None:
@@ -34,7 +42,7 @@ class GoogLeNet(nnx.Module):
 
         self.aux_logits = aux_logits
         self.transform_input = transform_input
-        self.training = training
+        self.deterministic = deterministic
 
         # 基础卷积层
         self.conv1 = conv_block(3, 64, kernel_size=(7, 7), strides=(2, 2), padding="SAME", rngs=rngs)
@@ -82,8 +90,8 @@ class GoogLeNet(nnx.Module):
             x = (x - mean) / std
         return x
 
-    def _forward(self, x: Array) -> tuple[Array, Array | None, Array | None]:
-        # Initial layers: N x 224 x 224 x 3 -> N x 28 x 28 x 192
+    def __call__(self, x: Array):
+        x = self._transform_input(x)
         x = self.conv1(x)
         x = self.maxpool1(x)
         x = self.conv2(x)
@@ -99,7 +107,7 @@ class GoogLeNet(nnx.Module):
         x = self.inception4a(x)  # N x 14 x 14 x 512
 
         aux1 = None
-        if self.aux1 is not None and self.training:
+        if self.aux1 is not None and not self.deterministic:
             aux1 = self.aux1(x)
 
         x = self.inception4b(x)
@@ -107,7 +115,7 @@ class GoogLeNet(nnx.Module):
         x = self.inception4d(x)  # N x 14 x 14 x 528
 
         aux2 = None
-        if self.aux2 is not None and self.training:
+        if self.aux2 is not None and not self.deterministic:
             aux2 = self.aux2(x)
 
         x = self.inception4e(x)  # N x 14 x 14 x 832
@@ -118,18 +126,12 @@ class GoogLeNet(nnx.Module):
         x = self.inception5b(x)  # N x 7 x 7 x 1024
 
         # Global average pooling and classification
-        x = jnp.mean(x, axis=(1, 2))  # N x 1024
+        x = x.mean(axis=(1, 2))  # N x 1024
         x = self.dropout(x)
         x = self.fc(x)
 
-        return x, aux2, aux1
-
-    def __call__(self, x: Array):
-        x = self._transform_input(x)
-        x, aux2, aux1 = self._forward(x)
-
-        if self.training and self.aux_logits:
-            return x, aux2, aux1
+        if not self.deterministic and self.aux_logits:
+            return GoogLeNetOutputs(x, aux2, aux1)
         return x
 
 
@@ -220,3 +222,7 @@ class BasicConv2d(nnx.Module):
         x = self.conv(x)
         x = self.bn(x)
         return nnx.relu(x)
+
+
+def googlenet(*, rngs: nnx.Rngs, **kwargs) -> GoogLeNet:
+    return GoogLeNet(transform_input=True, aux_logits=True, rngs=rngs, **kwargs)

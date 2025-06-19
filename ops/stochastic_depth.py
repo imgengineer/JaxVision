@@ -46,7 +46,7 @@ class StochasticDepth(Module):
         )
         keep_prob = 1.0 - self.rate
         rng = rngs[self.rng_collection]()
-        if self.mode == "row":  # noqa: SIM108
+        if self.mode == "row":
             # Zeroes randomly selected rows from the batch.
             # Mask shape: (batch_size, 1, 1, ...) - broadcasting will handle the rest
             broadcast_shape = (inputs.shape[0],) + (1,) * (inputs.ndim - 1)

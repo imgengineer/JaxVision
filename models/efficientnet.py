@@ -14,6 +14,21 @@ from ops.stochastic_depth import StochasticDepth
 
 from ._utils import _make_divisible
 
+__all__ = [
+    "EfficientNet",
+    "efficientnet_b0",
+    "efficientnet_b1",
+    "efficientnet_b2",
+    "efficientnet_b3",
+    "efficientnet_b4",
+    "efficientnet_b5",
+    "efficientnet_b6",
+    "efficientnet_b7",
+    "efficientnet_v2_l",
+    "efficientnet_v2_m",
+    "efficientnet_v2_s",
+]
+
 
 @dataclass
 class _MBConvConfig:
@@ -96,9 +111,9 @@ class MBConv(nnx.Module):
         stochastic_depth_prob: float,
         norm_layer: Callable[..., nnx.Module],
         se_layer: Callable[..., nnx.Module] = SqueezeExtraction,
+        deterministic: bool = False,
         *,
         rngs: nnx.Rngs,
-        training: bool = True,
     ) -> None:
         super().__init__()
 
@@ -161,7 +176,7 @@ class MBConv(nnx.Module):
             )
         )
 
-        self.training = training
+        self.deterministic = deterministic
         self.block = nnx.Sequential(*layers)
         self.stochastic_depth = StochasticDepth(rate=stochastic_depth_prob, mode="row", rngs=rngs)
         self.out_channels = cnf.out_channels
@@ -182,7 +197,7 @@ class FusedMBConv(nnx.Module):
         norm_layer: Callable[..., nnx.Module],
         *,
         rngs: nnx.Rngs,
-        training: bool = True,
+        deterministic: bool = False,
     ) -> None:
         super().__init__()
 
@@ -233,7 +248,7 @@ class FusedMBConv(nnx.Module):
                     rngs=rngs,
                 )
             )
-        self.training = training
+        self.deterministic = deterministic
         self.block = nnx.Sequential(*layers)
         self.stochastic_depth = StochasticDepth(rate=stochastic_depth_prob, mode="row", rngs=rngs)
         self.out_channels = cnf.out_channels
@@ -247,7 +262,7 @@ class FusedMBConv(nnx.Module):
 
 
 class EfficientNet(nnx.Module):
-    def __init__(  # noqa: D417, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         inverted_residual_setting: Sequence[MBConvConfig | FusedMBConvConfig],
         dropout: float,
@@ -440,7 +455,7 @@ def efficientnet_b0(
     )
 
 
-def efficientnet_b1(  # noqa: D417
+def efficientnet_b1(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -475,7 +490,7 @@ def efficientnet_b1(  # noqa: D417
     )
 
 
-def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:  # noqa: D417
+def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:
     """
     EfficientNet B2 model architecture from the `EfficientNet: Rethinking Model Scaling for Convolutional
     Neural Networks <https://arxiv.org/abs/1905.11946>`_ paper.
@@ -506,7 +521,7 @@ def efficientnet_b2(*, rngs: nnx.Rngs, **kwargs: Any) -> EfficientNet:  # noqa: 
     )
 
 
-def efficientnet_b3(  # noqa: D417
+def efficientnet_b3(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -541,7 +556,7 @@ def efficientnet_b3(  # noqa: D417
     )
 
 
-def efficientnet_b4(  # noqa: D417
+def efficientnet_b4(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -576,7 +591,7 @@ def efficientnet_b4(  # noqa: D417
     )
 
 
-def efficientnet_b5(  # noqa: D417
+def efficientnet_b5(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -612,7 +627,7 @@ def efficientnet_b5(  # noqa: D417
     )
 
 
-def efficientnet_b6(  # noqa: D417
+def efficientnet_b6(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -648,7 +663,7 @@ def efficientnet_b6(  # noqa: D417
     )
 
 
-def efficientnet_b7(  # noqa: D417
+def efficientnet_b7(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -684,7 +699,7 @@ def efficientnet_b7(  # noqa: D417
     )
 
 
-def efficientnet_v2_s(  # noqa: D417
+def efficientnet_v2_s(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -720,7 +735,7 @@ def efficientnet_v2_s(  # noqa: D417
     )
 
 
-def efficientnet_v2_m(  # noqa: D417
+def efficientnet_v2_m(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -756,7 +771,7 @@ def efficientnet_v2_m(  # noqa: D417
     )
 
 
-def efficientnet_v2_l(  # noqa: D417
+def efficientnet_v2_l(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,

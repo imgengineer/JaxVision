@@ -2,7 +2,6 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
-import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
@@ -10,6 +9,12 @@ from ops.misc import Conv2dNormActivation
 from ops.misc import SqueezeExtraction as SElayer
 
 from ._utils import _make_divisible
+
+__all__ = [
+    "MobileNetV3",
+    "mobilenet_v3_large",
+    "mobilenet_v3_small",
+]
 
 
 class InvertedResidualConfig:
@@ -20,7 +25,7 @@ class InvertedResidualConfig:
         kernel: int,
         expanded_channels: int,
         out_channels: int,
-        use_se: bool,  # noqa: FBT001
+        use_se: bool,
         activation: str,
         stride: int,
         dilation: int,
@@ -115,7 +120,7 @@ class InvertResidual(nnx.Module):
 
 
 class MobileNetV3(nnx.Module):
-    def __init__(  # noqa: D417, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         inverted_residual_setting: list[InvertedResidualConfig],
         last_channel: int,
@@ -174,7 +179,7 @@ class MobileNetV3(nnx.Module):
 
         # building inverted residual blocks
         for cnf in inverted_residual_setting:
-            layers.append(block(cnf, norm_layer, rngs=rngs))  # noqa: PERF401
+            layers.append(block(cnf, norm_layer, rngs=rngs))
 
         # building last several layers
         lastconv_input_channels = inverted_residual_setting[-1].out_channels
@@ -200,16 +205,16 @@ class MobileNetV3(nnx.Module):
 
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
-        x = jnp.mean(x, axis=(1, 2))
+        x = x.mean(axis=(1, 2))
         return self.classifier(x)
 
 
 def _mobilenet_v3_conf(
     arch: str,
     width_mult: float = 1.0,
-    reduced_tail: bool = False,  # noqa: FBT001, FBT002
-    dilated: bool = False,  # noqa: FBT001, FBT002
-    **kwargs: Any,  # noqa: ARG001
+    reduced_tail: bool = False,
+    dilated: bool = False,
+    **kwargs: Any,
 ):
     reduce_divider = 2 if reduced_tail else 1
     dilation = 2 if dilated else 1
@@ -219,24 +224,24 @@ def _mobilenet_v3_conf(
 
     if arch == "mobilenet_v3_large":
         inverted_residual_setting = [
-            bneck_conf(16, 3, 16, 16, False, "RE", 1, 1),  # noqa: FBT003
-            bneck_conf(16, 3, 64, 24, False, "RE", 2, 1),  # C1  # noqa: FBT003
-            bneck_conf(24, 3, 72, 24, False, "RE", 1, 1),  # noqa: FBT003
-            bneck_conf(24, 5, 72, 40, True, "RE", 2, 1),  # C2  # noqa: FBT003
-            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),  # noqa: FBT003
-            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),  # noqa: FBT003
-            bneck_conf(40, 3, 240, 80, False, "HS", 2, 1),  # C3  # noqa: FBT003
-            bneck_conf(80, 3, 200, 80, False, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(80, 3, 480, 112, True, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(112, 3, 672, 112, True, "HS", 1, 1),  # noqa: FBT003
+            bneck_conf(16, 3, 16, 16, False, "RE", 1, 1),
+            bneck_conf(16, 3, 64, 24, False, "RE", 2, 1),  # C1
+            bneck_conf(24, 3, 72, 24, False, "RE", 1, 1),
+            bneck_conf(24, 5, 72, 40, True, "RE", 2, 1),  # C2
+            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),
+            bneck_conf(40, 5, 120, 40, True, "RE", 1, 1),
+            bneck_conf(40, 3, 240, 80, False, "HS", 2, 1),  # C3
+            bneck_conf(80, 3, 200, 80, False, "HS", 1, 1),
+            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),
+            bneck_conf(80, 3, 184, 80, False, "HS", 1, 1),
+            bneck_conf(80, 3, 480, 112, True, "HS", 1, 1),
+            bneck_conf(112, 3, 672, 112, True, "HS", 1, 1),
             bneck_conf(
                 112,
                 5,
                 672,
                 160 // reduce_divider,
-                True,  # noqa: FBT003
+                True,
                 "HS",
                 2,
                 dilation,
@@ -246,7 +251,7 @@ def _mobilenet_v3_conf(
                 5,
                 960 // reduce_divider,
                 160 // reduce_divider,
-                True,  # noqa: FBT003
+                True,
                 "HS",
                 1,
                 dilation,
@@ -256,7 +261,7 @@ def _mobilenet_v3_conf(
                 5,
                 960 // reduce_divider,
                 160 // reduce_divider,
-                True,  # noqa: FBT003
+                True,
                 "HS",
                 1,
                 dilation,
@@ -265,21 +270,21 @@ def _mobilenet_v3_conf(
         last_channel = adjust_channels(1280 // reduce_divider)  # C5
     elif arch == "mobilenet_v3_small":
         inverted_residual_setting = [
-            bneck_conf(16, 3, 16, 16, True, "RE", 2, 1),  # C1  # noqa: FBT003
-            bneck_conf(16, 3, 72, 24, False, "RE", 2, 1),  # C2  # noqa: FBT003
-            bneck_conf(24, 3, 88, 24, False, "RE", 1, 1),  # noqa: FBT003
-            bneck_conf(24, 5, 96, 40, True, "HS", 2, 1),  # C3  # noqa: FBT003
-            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(40, 5, 120, 48, True, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(48, 5, 144, 48, True, "HS", 1, 1),  # noqa: FBT003
-            bneck_conf(48, 5, 288, 96 // reduce_divider, True, "HS", 2, dilation),  # C4  # noqa: FBT003
+            bneck_conf(16, 3, 16, 16, True, "RE", 2, 1),  # C1
+            bneck_conf(16, 3, 72, 24, False, "RE", 2, 1),  # C2
+            bneck_conf(24, 3, 88, 24, False, "RE", 1, 1),
+            bneck_conf(24, 5, 96, 40, True, "HS", 2, 1),  # C3
+            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),
+            bneck_conf(40, 5, 240, 40, True, "HS", 1, 1),
+            bneck_conf(40, 5, 120, 48, True, "HS", 1, 1),
+            bneck_conf(48, 5, 144, 48, True, "HS", 1, 1),
+            bneck_conf(48, 5, 288, 96 // reduce_divider, True, "HS", 2, dilation),  # C4
             bneck_conf(
                 96 // reduce_divider,
                 5,
                 576 // reduce_divider,
                 96 // reduce_divider,
-                True,  # noqa: FBT003
+                True,
                 "HS",
                 1,
                 dilation,
@@ -289,7 +294,7 @@ def _mobilenet_v3_conf(
                 5,
                 576 // reduce_divider,
                 96 // reduce_divider,
-                True,  # noqa: FBT003
+                True,
                 "HS",
                 1,
                 dilation,

@@ -1,7 +1,11 @@
+import dataclasses
 from collections.abc import Callable
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
+from flax.nnx import rnglib
+from flax.nnx.module import first_from
 from jax import Array
 
 
@@ -53,18 +57,6 @@ class Conv2dNormActivation(nnx.Sequential):
 
 
 class SqueezeExtraction(nnx.Module):
-    """
-    This block implements the Squeeze-and-Excitation block from https://arxiv.org/abs/1709.01507 (see Fig. 1).
-    Parameters ``activation``, and ``scale_activation`` correspond to ``delta`` and ``sigma`` in eq. 3.
-
-    Args:
-        input_channels (int): Number of channels in the input image
-        squeeze_channels (int): Number of squeeze channels
-        activation (Callable[..., torch.nn.Module], optional): ``delta`` activation. Default: ``torch.nn.ReLU``
-        scale_activation (Callable[..., torch.nn.Module]): ``sigma`` activation. Default: ``torch.nn.Sigmoid``
-
-    """  # noqa: D404
-
     def __init__(
         self,
         input_channels: int,
@@ -80,8 +72,8 @@ class SqueezeExtraction(nnx.Module):
         self.activation = activation
         self.scale_activation = scale_activation
 
-    def _scale(self, input: Array) -> Array:  # noqa: A002
-        scale = jnp.mean(input, axis=(1, 2), keepdims=True)
+    def _scale(self, x: Array) -> Array:
+        scale = x.mean(axis=(1, 2), keepdims=True)
         scale = self.fc1(scale)
         scale = self.activation(scale)
         scale = self.fc2(scale)
@@ -93,28 +85,13 @@ class SqueezeExtraction(nnx.Module):
 
 
 class MLP(nnx.Sequential):
-    """
-    This block implements the multi-layer perceptron (MLP) module.
-
-    Args:
-        in_channels (int): Number of channels of the input
-        hidden_channels (List[int]): List of the hidden channel dimensions
-        norm_layer (Callable[..., torch.nn.Module], optional): Norm layer that will be stacked on top of the linear layer. If ``None`` this layer won't be used. Default: ``None``
-        activation_layer (Callable[..., torch.nn.Module], optional): Activation function which will be stacked on top of the normalization layer (if not None), otherwise on top of the linear layer. If ``None`` this layer won't be used. Default: ``torch.nn.ReLU``
-        inplace (bool, optional): Parameter for the activation layer, which can optionally do the operation in-place.
-            Default is ``None``, which uses the respective default values of the ``activation_layer`` and Dropout layer.
-        bias (bool): Whether to use bias in the linear layer. Default ``True``
-        drop
-
-    """  # noqa: D404
-
     def __init__(  # noqa: PLR0913
         self,
         in_channels: int,
         hidden_channels: list[int],
         norm_layer: Callable[..., nnx.Module] | None = None,
         activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
-        bias: bool = False,  # noqa: FBT001, FBT002
+        bias: bool = False,
         dropout: float = 0.0,
         *,
         rngs: nnx.Rngs,
@@ -139,5 +116,40 @@ class Permute(nnx.Module):
         super().__init__()
         self.dims = dims
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        return input.transpose(self.dims)
+    def __call__(self, inputs: Array) -> Array:
+        return inputs.transpose(self.dims)
+
+
+class Identity:
+    def __call__(self, inputs: Array) -> Array:
+        return inputs
+
+
+@dataclasses.dataclass(repr=False)
+class DropPath(nnx.Module):
+    drop_prob: float = 0.0
+    scale_by_keep: bool = True
+    deterministic: bool = False
+    rng_collection: str = "dropout"
+    rngs: rnglib.Rngs | None = None
+
+    def __call__(self, inputs: Array, *, deterministic: bool | None = None, rngs: rnglib.Rngs | None = None) -> Array:
+        deterministic = first_from(
+            deterministic,
+            self.deterministic,
+            error_msg="""No `deterministic` argument was provided to DropPath
+            as either a __call__ argument or class attribute""",
+        )
+        if (self.drop_prob == 0.0) or deterministic:
+            return inputs
+        # Prevent gradient NaNs in 1.0 edge-case.
+        if self.drop_prob == 1.0:
+            return jnp.zeros_like(inputs)
+
+        keep_prob = 1.0 - self.drop_prob
+        rng = rngs[self.rng_collection]() if rngs else self.rngs[self.rng_collection]()
+        broadcast_shape = (inputs.shape[0],) + (1,) * (inputs.ndim - 1)
+        mask = jax.random.bernoulli(rng, p=keep_prob, shape=broadcast_shape)
+        mask = jnp.broadcast_to(mask, inputs.shape)
+
+        return jax.lax.select(mask, inputs / keep_prob if self.scale_by_keep else inputs, jnp.zeros_like(inputs))

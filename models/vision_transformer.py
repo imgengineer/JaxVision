@@ -9,6 +9,15 @@ from jax import Array
 
 from ops.misc import MLP, Conv2dNormActivation
 
+__all__ = [
+    "VisionTransformer",
+    "vit_b_16",
+    "vit_b_32",
+    "vit_h_14",
+    "vit_l_16",
+    "vit_l_32",
+]
+
 
 class ConvStemConfig(NamedTuple):
     out_channels: int
@@ -97,8 +106,8 @@ class Encoder(nnx.Module):
         self.pos_embedding = nnx.Param(jax.random.normal(rngs.params(), (1, seq_length, hidden_dim)) * 0.02)
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         layers: list[nnx.Module] = []
-        for _i in range(num_layers):
-            layers.append(  # noqa: PERF401
+        for _ in range(num_layers):
+            layers.append(
                 EncoderBlock(
                     num_heads,
                     hidden_dim,

@@ -2,9 +2,22 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any
 
-import jax.numpy as jnp
 from flax import nnx
 from jax import Array
+
+__all__ = [
+    "ResNet",
+    "resnet18",
+    "resnet34",
+    "resnet50",
+    "resnet101",
+    "resnet152",
+    "resnext50_32x4d",
+    "resnext101_32x8d",
+    "resnext101_64x4d",
+    "wide_resnet50_2",
+    "wide_resnet101_2",
+]
 
 
 def conv3x3(  # noqa: PLR0913
@@ -22,10 +35,10 @@ def conv3x3(  # noqa: PLR0913
         out_planes,
         kernel_size=(3, 3),
         strides=(stride, stride),
-        padding=dilation,
+        padding="SAME",
         feature_group_count=groups,
         use_bias=False,
-        kernel_dilation=dilation,
+        kernel_dilation=(dilation, dilation),
         rngs=rngs,
     )
 
@@ -155,7 +168,7 @@ class ResNet(nnx.Module):
         block: type[BasicBlock | Bottleneck],
         layers: list[int],
         num_classes: int = 1000,
-        zero_init_residual: bool = False,  # noqa: ARG002, FBT001, FBT002
+        zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
         replace_stride_with_dilation: list[bool] | None = None,
@@ -225,7 +238,7 @@ class ResNet(nnx.Module):
         planes: int,
         blocks: int,
         stride: int = 1,
-        dilate: bool = False,  # noqa: FBT001, FBT002
+        dilate: bool = False,
         *,
         rngs: nnx.Rngs,
     ) -> nnx.Sequential:
@@ -257,7 +270,7 @@ class ResNet(nnx.Module):
         )
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(  # noqa: PERF401
+            layers.append(
                 block(
                     self.inplanes,
                     planes,
@@ -281,7 +294,7 @@ class ResNet(nnx.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        x = jnp.mean(x, axis=(1, 2))
+        x = x.mean(axis=(1, 2))
         return self.fc(x)
 
 
@@ -315,7 +328,7 @@ def resnet152(*, rngs: nnx.Rngs, **kwargs) -> ResNet:
     return _resnet(Bottleneck, [3, 8, 36, 3], rngs=rngs, **kwargs)
 
 
-def resnext50_32x4d(  # noqa: D417
+def resnext50_32x4d(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -343,7 +356,7 @@ def resnext50_32x4d(  # noqa: D417
     return _resnet(Bottleneck, [3, 4, 6, 3], rngs=rngs, groups=32, width_per_group=4, **kwargs)
 
 
-def resnext101_32x8d(  # noqa: D417
+def resnext101_32x8d(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -371,7 +384,7 @@ def resnext101_32x8d(  # noqa: D417
     return _resnet(Bottleneck, [3, 4, 23, 3], rngs=rngs, groups=32, width_per_group=8, **kwargs)
 
 
-def resnext101_64x4d(  # noqa: D417
+def resnext101_64x4d(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -399,7 +412,7 @@ def resnext101_64x4d(  # noqa: D417
     return _resnet(Bottleneck, [3, 4, 23, 3], rngs=rngs, groups=64, width_per_group=4, **kwargs)
 
 
-def wide_resnet50_2(  # noqa: D417
+def wide_resnet50_2(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -427,7 +440,7 @@ def wide_resnet50_2(  # noqa: D417
     return _resnet(Bottleneck, [3, 4, 6, 3], rngs=rngs, width_per_group=64 * 2, **kwargs)
 
 
-def wide_resnet101_2(  # noqa: D417
+def wide_resnet101_2(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,

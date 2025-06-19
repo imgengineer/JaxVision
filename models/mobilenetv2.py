@@ -1,12 +1,13 @@
 from collections.abc import Callable
 
-import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
 from ops.misc import Conv2dNormActivation
 
 from ._utils import _make_divisible
+
+__all__ = ["MobileNetV2", "mobilenet_v2"]
 
 
 class InvertedResidual(nnx.Module):
@@ -81,7 +82,7 @@ class InvertedResidual(nnx.Module):
 
 
 class MobileNetV2(nnx.Module):
-    def __init__(  # noqa: D417, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         num_classes: int = 1000,
         width_mult: float = 1.0,
@@ -190,7 +191,7 @@ class MobileNetV2(nnx.Module):
 
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
-        x = jnp.mean(x, axis=(1, 2))
+        x = x.mean(axis=(1, 2))
         return self.classifier(x)
 
 

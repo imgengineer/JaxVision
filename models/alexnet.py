@@ -4,11 +4,11 @@ import jax
 from flax import nnx
 from jax import Array
 
+__all__ = ["AlexNet", "alexnet"]
+
 
 class AlexNet(nnx.Module):
-    def __init__(
-        self, num_classes: int = 1000, dropout: float = 0.5, *, rngs: nnx.Rngs
-    ) -> None:
+    def __init__(self, num_classes: int = 1000, dropout: float = 0.5, *, rngs: nnx.Rngs) -> None:
         super().__init__()
         self.features = nnx.Sequential(
             # First conv block
@@ -44,9 +44,10 @@ class AlexNet(nnx.Module):
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         batch_size, _, _, channels = x.shape
-        x = jax.image.resize(
-            x, (batch_size, 6, 6, channels), method=jax.image.ResizeMethod.LINEAR
-        )
+        x = jax.image.resize(x, (batch_size, 6, 6, channels), method=jax.image.ResizeMethod.LINEAR)
         x = x.reshape(batch_size, -1)
         return self.classifier(x)
 
+
+def alexnet(*, rngs: nnx.Rngs, **kwargs) -> AlexNet:
+    return AlexNet(rngs=rngs, **kwargs)

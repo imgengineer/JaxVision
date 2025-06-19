@@ -5,6 +5,18 @@ import jax
 from flax import nnx
 from jax import Array
 
+__all__ = [
+    "VGG",
+    "vgg11",
+    "vgg11_bn",
+    "vgg13",
+    "vgg13_bn",
+    "vgg16",
+    "vgg16_bn",
+    "vgg19",
+    "vgg19_bn",
+]
+
 
 class VGG(nnx.Module):
     def __init__(
@@ -37,7 +49,7 @@ class VGG(nnx.Module):
 
 def make_layers(
     cfg: list[str | int],
-    batch_norm: bool = False,  # noqa: FBT001, FBT002
+    batch_norm: bool = False,
     *,
     rngs: nnx.Rngs,
 ) -> nnx.Sequential:
@@ -106,7 +118,7 @@ cfgs: dict[str, list[str | int]] = {
 }
 
 
-def _vgg(cfg: str, batch_norm: bool, *, rngs: nnx.Rngs, **kwargs):  # noqa: FBT001
+def _vgg(cfg: str, batch_norm: bool, *, rngs: nnx.Rngs, **kwargs):
     features = make_layers(cfgs[cfg], batch_norm=batch_norm, rngs=rngs)
     return VGG(features=features, rngs=rngs, **kwargs)
 
@@ -114,32 +126,32 @@ def _vgg(cfg: str, batch_norm: bool, *, rngs: nnx.Rngs, **kwargs):  # noqa: FBT0
 # --- VGG 模型工厂函数 (使用 partial 优化) ---
 # 修正: 确保 rngs 能够正确传递到 _vgg 函数
 def vgg11(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("A", False, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("A", False, rngs=rngs, **kwargs)
 
 
 def vgg11_bn(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("A", True, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("A", True, rngs=rngs, **kwargs)
 
 
 def vgg13(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("B", False, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("B", False, rngs=rngs, **kwargs)
 
 
 def vgg13_bn(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("B", True, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("B", True, rngs=rngs, **kwargs)
 
 
 def vgg16(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("D", False, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("D", False, rngs=rngs, **kwargs)
 
 
 def vgg16_bn(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("D", True, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("D", True, rngs=rngs, **kwargs)
 
 
 def vgg19(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("E", False, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("E", False, rngs=rngs, **kwargs)
 
 
 def vgg19_bn(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
-    return _vgg("E", True, rngs=rngs, **kwargs)  # noqa: FBT003
+    return _vgg("E", True, rngs=rngs, **kwargs)

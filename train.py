@@ -1,31 +1,34 @@
 import os
+
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
+import csv
 import random
+from pathlib import Path
 
 import albumentations as A  # noqa: N812
 import cv2
+import grain
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
-import torch
-import torchvision
 from flax import nnx
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from dataset import ImageFolderDataSource
 from models.resnet import resnet18
+from transforms import AlbumentationsTransform, LoadImageMap
 
 # Configuration
 params = {
-    "num_epochs": 5,
+    "num_epochs": 300,
     "batch_size": 64,
     "target_size": 224,
     "learning_rate": 5e-4,
     "weight_decay": 1e-4,
     "seed": 42,
-    "num_workers": 2,
-    "num_classes": 6,
+    "num_workers": 8,
+    "num_classes": 16,
     "train_data_path": "./MpoxData/train",
     "val_data_path": "./MpoxData/validation",
     "checkpoint_dir": "/Users/billy/Documents/DLStudy/JaxVision/checkpoints",
@@ -34,68 +37,46 @@ params = {
 
 def set_seed(seed):
     """Set random seeds for reproducibility"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)  # noqa: NPY002
+    np.random.seed(seed)
     random.seed(seed)
 
 
-def numpy_collate(batch):
+def create_transforms(target_size, is_training=True) -> A.Compose:
     """
-    Collates a batch of samples into a single array or nested list of arrays.
+    为皮肤病图像创建数据增强变换。
 
-    This function recursively processes a batch of samples, stacking NumPy arrays, and collating lists or tuples by grouping elements together. If the batch consists of NumPy arrays, they are stacked. If the batch contains tuples or lists, the function recursively applies the collation.
-
-    This collate function is taken from the `JAX tutorial with PyTorch Data Loading <https://jax.readthedocs.io/en/latest/notebooks/Neural_Network_and_Data_Loading.html>`_.
-
-    Parameters
-    ----------
-    batch : List[Union[np.ndarray, Tuple, List]]
-        A batch of samples where each sample is either a NumPy array, a tuple, or a list. It depends on the
-        data loader.
-
-    Returns
-    -------
-    np.ndarray
-        The collated batch, either as a stacked NumPy array or as a nested structure of arrays.
-
-    """
-    if isinstance(batch[0], np.ndarray):
-        return np.stack(batch)
-    if isinstance(batch[0], (tuple, list)):
-        transposed = zip(*batch, strict=False)
-        return [numpy_collate(samples) for samples in transposed]
-    return np.asarray(batch)
-
-
-def load_image(img_path):
-    """Load image in RGB format"""
-    img = cv2.imread(img_path)
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-
-def create_transforms(target_size, is_training=True):  # noqa: FBT002
-    """Create data augmentation transforms"""
+    考虑了皮肤病图像的特定需求，旨在保留病灶特征并增加数据多样性。
+    """  # noqa: RUF002
     transforms_list = [
-        # Fix resize issue - use direct resize instead of SmallestMaxSize + Crop
         A.Resize(height=target_size, width=target_size, p=1.0),
     ]
 
     if is_training:
         transforms_list.extend(
             [
-                A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.8),
                 A.HorizontalFlip(p=0.5),
                 A.VerticalFlip(p=0.5),
-                A.Rotate(limit=30, p=0.5),
+                A.Rotate(limit=30, p=0.5, border_mode=cv2.BORDER_REFLECT_101),  # 使用 cv2.BORDER_REFLECT_101 填充边缘
+                A.ColorJitter(
+                    brightness=0.2,
+                    contrast=0.2,
+                    saturation=0.2,
+                    hue=0.05,  # 减小 hue 的变化范围
+                    p=0.5,
+                ),
+                A.RandomResizedCrop(
+                    size=(target_size, target_size),
+                    scale=(0.8, 1.0),
+                    ratio=(0.75, 1.33),
+                    p=0.5,
+                ),
             ]
         )
 
     transforms_list.append(
         A.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
+            mean=[0.485, 0.456, 0.406],  # ImageNet 均值
+            std=[0.229, 0.224, 0.225],  # ImageNet 标准差
             max_pixel_value=255.0,
         )
     )
@@ -103,55 +84,46 @@ def create_transforms(target_size, is_training=True):  # noqa: FBT002
     return A.Compose(transforms_list)
 
 
-class ImageTransforms:
-    """Wrapper for albumentations transforms"""
-
-    def __init__(self, transforms: A.Compose):
-        self.transforms = transforms
-
-    def __call__(self, image: np.ndarray) -> np.ndarray:
-        return self.transforms(image=image)["image"]
-
-
 def create_datasets(params):
     """Create training and validation datasets"""
-    train_transforms = create_transforms(params["target_size"], is_training=True)
-    val_transforms = create_transforms(params["target_size"], is_training=False)
+    train_dataset = ImageFolderDataSource(params["train_data_path"])
 
-    train_dataset = torchvision.datasets.ImageFolder(
-        params["train_data_path"],
-        transform=ImageTransforms(train_transforms),
-        loader=load_image,
-    )
-
-    val_dataset = torchvision.datasets.ImageFolder(
-        params["val_data_path"],
-        transform=ImageTransforms(val_transforms),
-        loader=load_image,
-    )
+    val_dataset = ImageFolderDataSource(params["val_data_path"])
 
     return train_dataset, val_dataset
 
 
 def create_dataloaders(train_dataset, val_dataset, params):
     """Create data loaders"""
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=params["batch_size"],
-        shuffle=True,
-        collate_fn=numpy_collate,
-        num_workers=params["num_workers"],
-        pin_memory=True,
-        drop_last=True,  # Avoid batch size issues
-    )
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=params["batch_size"],
-        shuffle=False,
-        collate_fn=numpy_collate,
-        num_workers=params["num_workers"],
-        pin_memory=True,
+    def create_batch_fn(batch):
+        images, labels = zip(*batch, strict=True)
+        return np.stack(images, axis=0), np.stack(labels, axis=0)
+
+    train_loader = (
+        grain.MapDataset.source(train_dataset)
+        .shuffle(seed=params["seed"])
+        .map(LoadImageMap())
+        .map(AlbumentationsTransform(create_transforms(params["target_size"], is_training=True)))
+        .to_iter_dataset()
+        .batch(
+            batch_size=params["batch_size"],
+            drop_remainder=True,
+            batch_fn=create_batch_fn,
+        )
+        .mp_prefetch(options=grain.multiprocessing.MultiprocessingOptions(num_workers=params["num_workers"]))
+    )
+    val_loader = (
+        grain.MapDataset.source(val_dataset)
+        .map(LoadImageMap())
+        .map(AlbumentationsTransform(create_transforms(params["target_size"], is_training=False)))
+        .to_iter_dataset()
+        .batch(
+            batch_size=params["batch_size"],
+            drop_remainder=False,
+            batch_fn=create_batch_fn,
+        )
+        .mp_prefetch(options=grain.multiprocessing.MultiprocessingOptions(num_workers=params["num_workers"]))
     )
 
     return train_loader, val_loader
@@ -162,12 +134,24 @@ def create_model(seed, num_classes):
     return resnet18(rngs=nnx.Rngs(seed), num_classes=num_classes)
 
 
-def save_model(model, path):
+def create_optimizer(model, learining_rate: float, weight_decay: float):
+    """Create an optimizer for the model"""
+    return nnx.Optimizer(
+        model,
+        optax.adamw(
+            learning_rate=learining_rate,
+            weight_decay=weight_decay,
+        ),
+    )
+
+
+def save_model(model, path_str: str):
     """Save model state"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)  # noqa: PTH103, PTH120
+    model_path = Path(path_str)
+    model_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     checkpointer = ocp.PyTreeCheckpointer()
     state = nnx.state(model)
-    checkpointer.save(path, state)
+    checkpointer.save(model_path, state)
 
 
 def load_model(path, num_classes):
@@ -204,90 +188,10 @@ def train_step(model, optimizer, metrics, batch):
 @nnx.jit
 def eval_step(model, metrics, batch):
     """Single evaluation step"""
-    # Convert numpy arrays to jnp.array on GPU
+    # convert numpy arrays to jnp.array on GPU
     x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
     loss, logits = loss_fn(model, (x, y_true))
     metrics.update(loss=loss, logits=logits, labels=y_true)
-
-
-def train_epoch(model, optimizer, metrics, train_loader, epoch_num):
-    """Train for one epoch"""
-    model.train()
-    for batch in tqdm(train_loader, desc=f"Epoch {epoch_num + 1} Training"):
-        train_step(model, optimizer, metrics, batch)
-
-    result = metrics.compute()
-    metrics.reset()
-
-    print(f"✅ Train Loss: {result['loss']:.4f}, Acc: {result['accuracy'] * 100:.6f}%")
-    return result
-
-
-def validate_epoch(model, metrics, val_loader, epoch_num):
-    """Validate for one epoch"""
-    model.eval()
-    for batch in tqdm(val_loader, desc=f"Epoch {epoch_num + 1} Validation"):
-        eval_step(model, metrics, batch)
-
-    result = metrics.compute()
-    metrics.reset()
-
-    print(f"📊 Val Loss: {result['loss']:.4f}, Acc: {result['accuracy'] * 100:.6f}%")
-    return result
-
-
-def update_metrics_history(metrics_history, train_result, val_result):
-    """Update metrics history"""
-    for k, v in train_result.items():
-        metrics_history[f"train_{k}"].append(float(v))
-
-    for k, v in val_result.items():
-        metrics_history[f"val_{k}"].append(float(v))
-
-
-def save_best_model_if_improved(model, val_result, best_acc, epoch_num, checkpoint_dir):
-    """Save model if it's the best so far"""
-    current_acc = float(val_result["accuracy"])
-
-    if current_acc > best_acc:
-        checkpoint_path = os.path.join(  # noqa: PTH118
-            checkpoint_dir,
-            f"best_model_Epoch_{epoch_num + 1}_Acc_{current_acc:.6f}",
-            "state",
-        )
-        save_model(model, checkpoint_path)
-        print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
-        return current_acc
-
-    return best_acc
-
-
-def plot_training_metrics(metrics_history):
-    """Plot training and validation metrics"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-
-    epochs = range(1, len(metrics_history["train_loss"]) + 1)
-
-    # Plot loss
-    ax1.plot(epochs, metrics_history["train_loss"], label="Train Loss", marker="o")
-    ax1.plot(epochs, metrics_history["val_loss"], label="Val Loss", marker="s")
-    ax1.set_title("Training and Validation Loss")
-    ax1.set_xlabel("Epoch")
-    ax1.set_ylabel("Loss")
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)  # noqa: FBT003
-
-    # Plot accuracy
-    ax2.plot(epochs, metrics_history["train_accuracy"], label="Train Accuracy", marker="o")
-    ax2.plot(epochs, metrics_history["val_accuracy"], label="Val Accuracy", marker="s")
-    ax2.set_title("Training and Validation Accuracy")
-    ax2.set_xlabel("Epoch")
-    ax2.set_ylabel("Accuracy")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)  # noqa: FBT003
-
-    plt.tight_layout()
-    plt.show()
 
 
 def print_dataset_info(train_dataset, val_dataset):
@@ -296,7 +200,7 @@ def print_dataset_info(train_dataset, val_dataset):
     print(f"  Train samples: {len(train_dataset)}")
     print(f"  Validation samples: {len(val_dataset)}")
     print(f"  Classes: {train_dataset.classes}")
-    print(f"  Number of classes:ß {len(train_dataset.classes)}")
+    print(f"  Number of classes: {len(train_dataset.classes)}")
 
 
 def main():
@@ -317,29 +221,33 @@ def main():
     print("\n🏗️ Creating model and optimizer...")
     model = create_model(params["seed"], params["num_classes"])
 
-    optimizer = nnx.Optimizer(
+    optimizer = create_optimizer(
         model,
-        optax.adamw(
-            learning_rate=params["learning_rate"],
-            weight_decay=params["weight_decay"],
-        ),
+        learining_rate=params["learning_rate"],
+        weight_decay=params["weight_decay"],
     )
 
-    metrics = nnx.MultiMetric(
+    train_metrics = nnx.MultiMetric(
+        accuracy=nnx.metrics.Accuracy(),
+        loss=nnx.metrics.Average("loss"),
+    )
+    val_metrics = nnx.MultiMetric(
         accuracy=nnx.metrics.Accuracy(),
         loss=nnx.metrics.Average("loss"),
     )
 
     # Initialize tracking variables
-    metrics_history = {
-        "train_loss": [],
-        "train_accuracy": [],
-        "val_loss": [],
-        "val_accuracy": [],
-    }
+
+    # Initialize best accuracy
     best_acc = -1.0
 
     # Training loop
+    csv_path = os.path.join(params["checkpoint_dir"], "train_log.csv")
+    with Path.open(csv_path, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
+    cached_train_step = nnx.cached_partial(train_step, model, optimizer, train_metrics)
+    cached_eval_step = nnx.cached_partial(eval_step, model, val_metrics)
     print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
 
     for epoch in range(params["num_epochs"]):
@@ -348,21 +256,44 @@ def main():
         print(f"{'=' * 60}")
 
         # Train and validate
-        train_result = train_epoch(model, optimizer, metrics, train_loader, epoch)
-        val_result = validate_epoch(model, metrics, val_loader, epoch)
+        model.train()
+        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
+            cached_train_step(batch)
+        train_result = train_metrics.compute()
+        train_metrics.reset()
+        print(f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%")
 
-        # Update metrics history
-        update_metrics_history(metrics_history, train_result, val_result)
+        model.eval()
+        for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
+            cached_eval_step(batch)
+        val_result = val_metrics.compute()
+        val_metrics.reset()
+        print(f"📊 Val Loss: {val_result['loss']:.6f}, Acc: {val_result['accuracy'] * 100:.6f}%")
 
-        # Save best model
-        best_acc = save_best_model_if_improved(model, val_result, best_acc, epoch, params["checkpoint_dir"])
-
+        # Save model if validation accuracy improved
+        current_acc = float(val_result["accuracy"])
+        if current_acc > best_acc:
+            best_acc = current_acc
+            checkpoint_path = os.path.join(
+                params["checkpoint_dir"],
+                f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}",
+                "state",
+            )
+            save_model(model, checkpoint_path)
+            print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
+        with open(csv_path, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    epoch + 1,
+                    train_result["loss"],
+                    train_result["accuracy"],
+                    val_result["loss"],
+                    val_result["accuracy"],
+                ]
+            )
     print("\n🎯 Training completed!")
     print(f"🏆 Best validation accuracy: {best_acc * 100:.6f}%")
-
-    # Plot results
-    print("\n📈 Plotting training metrics...")
-    plot_training_metrics(metrics_history)
 
 
 if __name__ == "__main__":

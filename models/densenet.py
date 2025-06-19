@@ -5,6 +5,14 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
+__all__ = [
+    "DenseNet",
+    "densenet121",
+    "densenet161",
+    "densenet169",
+    "densenet201",
+]
+
 
 class _DenseLayer(nnx.Module):
     def __init__(
@@ -74,7 +82,7 @@ class _DenseBlock(nnx.Module):
         super().__init__()
         layers: list[nnx.Module] = []
         for i in range(num_layers):
-            layers.append(  # noqa: PERF401
+            layers.append(
                 _DenseLayer(
                     num_input_features + i * growth_rate,
                     growth_rate=growth_rate,
@@ -185,7 +193,7 @@ class DenseNet(nnx.Module):
     def __call__(self, x: Array) -> Array:
         features = self.features(x)
         out = nnx.relu(features)
-        out = jnp.mean(out, axis=(1, 2))
+        out = out.mean(axis=(1, 2))
         return self.classifier(out)
 
 

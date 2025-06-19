@@ -11,6 +11,25 @@ from ops.misc import Conv2dNormActivation, SqueezeExtraction
 
 from ._utils import _make_divisible
 
+__all__ = [
+    "RegNet",
+    "regnet_x_1_6gf",
+    "regnet_x_3_2gf",
+    "regnet_x_8gf",
+    "regnet_x_16gf",
+    "regnet_x_32gf",
+    "regnet_x_400mf",
+    "regnet_x_800mf",
+    "regnet_y_1_6gf",
+    "regnet_y_3_2gf",
+    "regnet_y_8gf",
+    "regnet_y_16gf",
+    "regnet_y_32gf",
+    "regnet_y_128gf",
+    "regnet_y_400mf",
+    "regnet_y_800mf",
+]
+
 
 class SimpleStemIN(Conv2dNormActivation):
     """Simple stem for ImageNet: 3x3, BN, ReLU"""
@@ -171,7 +190,6 @@ class AnyStage(nnx.Sequential):
         group_width: int,
         bottleneck_multiplier: float,
         se_ratio: float | None = None,
-        stage_index: int = 0,  # noqa: ARG002
         *,
         rngs: nnx.Rngs,
     ) -> None:
@@ -219,7 +237,7 @@ class BlockParams:
         group_width: int,
         bottleneck_multiplier: float = 1.0,
         se_ratio: float | None = None,
-        **kwargs: Any,  # noqa: ARG003
+        **kwargs: Any,
     ) -> "BlockParams":
         """
         Programmatically compute all the per-block settings,
@@ -358,7 +376,7 @@ class RegNet(nnx.Module):
             depth,
             group_width,
             bottleneck_multiplier,
-        ) in enumerate(block_params._get_expanded_params()):  # noqa: SLF001
+        ) in enumerate(block_params._get_expanded_params()):
             blocks.append(
                 AnyStage(
                     current_width,
@@ -385,7 +403,7 @@ class RegNet(nnx.Module):
         x = self.stem(x)
         x = self.trunk_output(x)
 
-        x = jnp.mean(x, axis=(1, 2))
+        x = x.mean(axis=(1, 2))
         return self.fc(x)
 
 
@@ -394,7 +412,7 @@ def _regnet(block_params: BlockParams, *, rngs: nnx.Rngs, **kwargs):
     return RegNet(block_params, norm_layer=norm_layer, rngs=rngs, **kwargs)
 
 
-def regnet_y_400mf(  # noqa: D417
+def regnet_y_400mf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -421,7 +439,7 @@ def regnet_y_400mf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_800mf(  # noqa: D417
+def regnet_y_800mf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -448,7 +466,7 @@ def regnet_y_800mf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_1_6gf(  # noqa: D417
+def regnet_y_1_6gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -477,7 +495,7 @@ def regnet_y_1_6gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_3_2gf(  # noqa: D417
+def regnet_y_3_2gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -506,7 +524,7 @@ def regnet_y_3_2gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_8gf(  # noqa: D417
+def regnet_y_8gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -535,7 +553,7 @@ def regnet_y_8gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_16gf(  # noqa: D417
+def regnet_y_16gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -570,7 +588,7 @@ def regnet_y_16gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_32gf(  # noqa: D417
+def regnet_y_32gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -605,7 +623,7 @@ def regnet_y_32gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_y_128gf(  # noqa: D417
+def regnet_y_128gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -640,7 +658,7 @@ def regnet_y_128gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_400mf(  # noqa: D417
+def regnet_x_400mf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -667,7 +685,7 @@ def regnet_x_400mf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_800mf(  # noqa: D417
+def regnet_x_800mf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -694,7 +712,7 @@ def regnet_x_800mf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_1_6gf(  # noqa: D417
+def regnet_x_1_6gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -721,7 +739,7 @@ def regnet_x_1_6gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_3_2gf(  # noqa: D417
+def regnet_x_3_2gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -748,7 +766,7 @@ def regnet_x_3_2gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_8gf(  # noqa: D417
+def regnet_x_8gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -775,7 +793,7 @@ def regnet_x_8gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_16gf(  # noqa: D417
+def regnet_x_16gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
@@ -802,7 +820,7 @@ def regnet_x_16gf(  # noqa: D417
     return _regnet(params, rngs=rngs, **kwargs)
 
 
-def regnet_x_32gf(  # noqa: D417
+def regnet_x_32gf(
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,

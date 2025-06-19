@@ -1,12 +1,15 @@
 import jax
 from flax import nnx
 
-from models.vgg import vgg11
+from models.googlenet import googlenet
 
 rngs = nnx.Rngs(0)
 x = jax.random.normal(rngs.params(), (1, 224, 224, 3))
-model = vgg11(
+model = googlenet(
     rngs=rngs,
     num_classes=10,
 )
-print(model(x).shape)
+model.eval()
+
+y= model(x)
+print(y.shape)
