@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import Conv2dNormActivation, SqueezeExtraction
+from ops.misc import Conv2dNormActivation, ReLU, SqueezeExtraction
 
 from ._utils import _make_divisible
 
@@ -168,7 +168,7 @@ class ResBottlenectBlock(nnx.Module):
             se_ratio,
             rngs=rngs,
         )
-        self.activation = activation_layer
+        self.activation = activation_layer()
 
     def __call__(self, x: Array) -> Array:
         x = self.proj(x) + self.f(x) if self.proj is not None else x + self.f(x)
@@ -356,7 +356,7 @@ class RegNet(nnx.Module):
         if block_type is None:
             block_type = ResBottlenectBlock
         if activation is None:
-            activation = nnx.relu
+            activation = ReLU
 
         # Ad hoc stem
         self.stem = stem_type(

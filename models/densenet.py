@@ -5,6 +5,8 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
+from ops.misc import ReLU
+
 __all__ = [
     "DenseNet",
     "densenet121",
@@ -104,7 +106,7 @@ class _Transition(nnx.Sequential):
     def __init__(self, num_input_features: int, num_output_features: int, *, rngs: nnx.Rngs) -> None:
         layers = [
             nnx.BatchNorm(num_input_features, rngs=rngs),
-            nnx.relu,
+            ReLU(),
             nnx.Conv(
                 num_input_features,
                 num_output_features,
@@ -157,7 +159,7 @@ class DenseNet(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(num_init_features, rngs=rngs),
-            nnx.relu,
+            ReLU(),
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"),
         ]
 

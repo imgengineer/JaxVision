@@ -5,7 +5,7 @@ from typing import Any
 from flax import nnx
 from jax import Array
 
-from ops.misc import Conv2dNormActivation
+from ops.misc import GELU, Conv2dNormActivation
 from ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -35,7 +35,7 @@ class CNBlock(nnx.Module):
             nnx.Conv(dim, dim, kernel_size=(7, 7), padding="SAME", feature_group_count=dim, use_bias=True, rngs=rngs),
             norm_layer(dim, rngs=rngs),
             nnx.Linear(in_features=dim, out_features=4 * dim, use_bias=True, rngs=rngs),
-            nnx.gelu,
+            GELU(),
             nnx.Linear(in_features=4 * dim, out_features=dim, use_bias=True, rngs=rngs),
         )
         self.layer_scale = nnx.Param(nnx.initializers.constant(layer_scale)(rngs.params(), (1, 1, 1, dim)))

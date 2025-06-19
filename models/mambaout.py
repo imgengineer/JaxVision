@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import DropPath
+from ops.misc import GELU, DropPath
 
 
 class StemLayer(nnx.Module):
@@ -16,7 +16,7 @@ class StemLayer(nnx.Module):
         self,
         in_channels: int,
         out_channels: int,
-        act_layer=nnx.gelu,
+        act_layer=GELU,
         norm_layer=partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
         *,
         rngs: nnx.Rngs,
@@ -25,10 +25,15 @@ class StemLayer(nnx.Module):
         # JAX Conv expects input format (N, H, W, C)
         # Convolution 1: Halves spatial dimensions, halves channels (out_channels // 2)
         self.conv1 = nnx.Conv(
-            in_channels, out_channels // 2, kernel_size=(3, 3), strides=(2, 2), padding="SAME", rngs=rngs,
+            in_channels,
+            out_channels // 2,
+            kernel_size=(3, 3),
+            strides=(2, 2),
+            padding="SAME",
+            rngs=rngs,
         )
         self.norm1 = norm_layer(out_channels // 2, rngs=rngs)  # Normalize along the last dimension (channels)
-        self.act = act_layer  # Activation function (e.g., GELU)
+        self.act = act_layer()  # Activation function (e.g., GELU)
 
         # Convolution 2: Halves spatial dimensions again, doubles channels back to out_channels
         self.conv2 = nnx.Conv(
@@ -107,7 +112,7 @@ class MlpHead(nnx.Module):
         self,
         dim: int,
         num_classes: int = 1000,
-        act_layer=nnx.gelu,
+        act_layer=GELU,
         mlp_ratio: int = 4,
         norm_layer=partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
         head_dropout: float = 0.0,
@@ -121,7 +126,7 @@ class MlpHead(nnx.Module):
 
         # Linear layer 1
         self.fc1 = nnx.Linear(dim, hidden_features, use_bias=bias, rngs=rngs)
-        self.act = act_layer  # Activation function
+        self.act = act_layer()  # Activation function
         self.norm = norm_layer(hidden_features, rngs=rngs)  # Normalization layer
 
         # Linear layer 2 (output to num_classes)
@@ -163,7 +168,7 @@ class GatedCNNBlock(nnx.Module):
         kernel_size: int = 7,
         conv_ratio: float = 1.0,
         norm_layer=partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
-        act_layer=nnx.gelu,
+        act_layer=GELU,
         drop_path: float = 0.0,
         *,
         rngs: nnx.Rngs,
@@ -175,7 +180,7 @@ class GatedCNNBlock(nnx.Module):
         hidden = int(expansion_ratio * dim)
         # First linear layer to expand features
         self.fc1 = nnx.Linear(dim, hidden * 2, rngs=rngs)
-        self.act = act_layer
+        self.act = act_layer()
 
         # Calculate channels for depthwise convolution
         conv_channels = int(conv_ratio * dim)
@@ -284,7 +289,7 @@ class MambaOut(nnx.Module):
         dims: list[int] | None = None,
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
         norm_layer=partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
-        act_layer=nnx.gelu,
+        act_layer=GELU,
         conv_ratio: float = 1.0,
         kernel_size: int = 7,
         drop_path_rate: float = 0.0,

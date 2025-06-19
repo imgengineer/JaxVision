@@ -5,6 +5,8 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
+from ops.misc import ReLU
+
 __all__ = [
     "ShuffleNetV2",
     "shufflenet_v2_x0_5",
@@ -62,7 +64,7 @@ class InvertedResidual(nnx.Module):
                     rngs=rngs,
                 ),
                 nnx.BatchNorm(branch_features, rngs=rngs),
-                nnx.relu,
+                ReLU(),
             )
         else:
             self.branch1 = nnx.Sequential()
@@ -78,7 +80,7 @@ class InvertedResidual(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(branch_features, rngs=rngs),
-            nnx.relu,
+            ReLU(),
             self.depthwise_conv(
                 branch_features,
                 branch_features,
@@ -98,7 +100,7 @@ class InvertedResidual(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(branch_features, rngs=rngs),
-            nnx.relu,
+            ReLU(),
         )
 
     @staticmethod
@@ -157,7 +159,7 @@ class ShuffleNetV2(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(output_channels, rngs=rngs),
-            nnx.relu,
+            ReLU(),
         )
         input_channels = output_channels
 
@@ -190,7 +192,7 @@ class ShuffleNetV2(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(output_channels, rngs=rngs),
-            nnx.relu,
+            ReLU(),
         )
 
         self.fc = nnx.Linear(output_channels, num_classes, rngs=rngs)

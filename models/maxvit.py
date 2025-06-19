@@ -8,7 +8,7 @@ import numpy as np
 from flax import nnx
 from jax import Array
 
-from ops.misc import Conv2dNormActivation, Identity, SqueezeExtraction
+from ops.misc import GELU, Conv2dNormActivation, Identity, SiLU, SqueezeExtraction
 from ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -120,7 +120,7 @@ class MBConv(nnx.Module):
                     groups=mid_channels,
                     rngs=rngs,
                 ),
-                SqueezeExtraction(mid_channels, sqz_channels, activation=nnx.silu, rngs=rngs),
+                SqueezeExtraction(mid_channels, sqz_channels, activation=SiLU, rngs=rngs),
                 nnx.Conv(
                     mid_channels,
                     out_channels,
@@ -599,7 +599,7 @@ class MaxVit(nnx.Module):
         # norm_layer is applied only to the conv layers
         # activation_layer is applied both to conv and transformer layers
         norm_layer: Callable[..., nnx.Module] | None = None,
-        activation_layer: Callable[..., nnx.Module] = nnx.gelu,
+        activation_layer: Callable[..., nnx.Module] = GELU,
         # conv parameters
         squeeze_ratio: float = 0.25,
         expansion_ratio: float = 4,

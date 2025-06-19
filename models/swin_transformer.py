@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import MLP
+from ops.misc import GELU, MLP, ReLU
 from ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -378,7 +378,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         # mlp to generate continuous relative position bias
         self.cpb_mlp = nnx.Sequential(
             nnx.Linear(2, 512, use_bias=True, rngs=rngs),
-            nnx.relu,
+            ReLU(),
             nnx.Linear(512, num_heads, use_bias=False, rngs=rngs),
         )
         if qkv_bias:
@@ -487,7 +487,7 @@ class SwinTransformerBlock(nnx.Module):
         )
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row", rngs=rngs)
         self.norm2 = norm_layer(dim, rngs=rngs)
-        self.mlp = MLP(dim, [int(dim * mlp_ratio), dim], activation_layer=nnx.gelu, dropout=dropout, rngs=rngs)
+        self.mlp = MLP(dim, [int(dim * mlp_ratio), dim], activation_layer=GELU, dropout=dropout, rngs=rngs)
 
         for m in self.mlp.iter_modules():
             if isinstance(m, nnx.Linear):

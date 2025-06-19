@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import Conv2dNormActivation, SqueezeExtraction
+from ops.misc import Conv2dNormActivation, SiLU, SqueezeExtraction
 from ops.stochastic_depth import StochasticDepth
 
 from ._utils import _make_divisible
@@ -124,7 +124,7 @@ class MBConv(nnx.Module):
         self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
 
         layers: list[nnx.Module] = []
-        activation_layer = nnx.silu
+        activation_layer = SiLU
 
         # expand
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
@@ -159,7 +159,7 @@ class MBConv(nnx.Module):
             se_layer(
                 expanded_channels,
                 squeeze_channels,
-                activation=nnx.silu,
+                activation=SiLU,
                 rngs=rngs,
             ),
         )
@@ -208,7 +208,7 @@ class FusedMBConv(nnx.Module):
         self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
 
         layers: list[nnx.Module] = []
-        activation_layer = nnx.silu
+        activation_layer = SiLU
 
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
         if expanded_channels != cnf.input_channels:
@@ -309,7 +309,7 @@ class EfficientNet(nnx.Module):
                 kernel_size=3,
                 stride=2,
                 norm_layer=norm_layer,
-                activation_layer=nnx.silu,
+                activation_layer=SiLU,
                 rngs=rngs,
             ),
         )
@@ -345,7 +345,7 @@ class EfficientNet(nnx.Module):
                 lastconv_output_channels,
                 kernel_size=1,
                 norm_layer=norm_layer,
-                activation_layer=nnx.silu,
+                activation_layer=SiLU,
                 rngs=rngs,
             ),
         )

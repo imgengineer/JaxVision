@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ops.misc import MLP, Conv2dNormActivation
+from ops.misc import GELU, MLP, Conv2dNormActivation, ReLU
 
 __all__ = [
     "VisionTransformer",
@@ -24,7 +24,7 @@ class ConvStemConfig(NamedTuple):
     kernel_size: int
     stride: int
     norm_layer: Callable[..., nnx.Module] = nnx.BatchNorm
-    activation_layer: Callable[..., nnx.Module] = nnx.relu
+    activation_layer: Callable[..., nnx.Module] = ReLU,  # noqa: COM818
 
 
 class MLPBlock(MLP):
@@ -36,7 +36,7 @@ class MLPBlock(MLP):
         super().__init__(
             in_dim,
             [mlp_dim, in_dim],
-            activation_layer=nnx.gelu,
+            activation_layer=GELU,
             dropout=dropout,
             rngs=rngs,
         )
