@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable
 from functools import partial
 from typing import NamedTuple
@@ -40,6 +41,11 @@ class MLPBlock(MLP):
             dropout=dropout,
             rngs=rngs,
         )
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.xavier_uniform()
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.normal(stddev=1e-6)
 
 
 class EncoderBlock(nnx.Module):
@@ -74,11 +80,11 @@ class EncoderBlock(nnx.Module):
         self.ln_2 = norm_layer(hidden_dim, rngs=rngs)
         self.mlp = MLPBlock(hidden_dim, mlp_dim, dropout, rngs=rngs)
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        x = self.ln_1(input)
+    def __call__(self, inputs: Array) -> Array:
+        x = self.ln_1(inputs)
         x = self.self_attention(x, x, x)
         x = self.dropout(x)
-        x = x + input
+        x = x + inputs
 
         y = self.ln_2(x)
         y = self.mlp(y)
@@ -103,7 +109,9 @@ class Encoder(nnx.Module):
     ):
         super().__init__()
 
-        self.pos_embedding = nnx.Param(jax.random.normal(rngs.params(), (1, seq_length, hidden_dim)) * 0.02)
+        self.pos_embedding = nnx.Param(
+            nnx.initializers.normal(stddev=0.02)(key=rngs.params(), shape=(1, seq_length, hidden_dim))
+        )
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         layers: list[nnx.Module] = []
         for _ in range(num_layers):
@@ -121,9 +129,9 @@ class Encoder(nnx.Module):
         self.layers = nnx.Sequential(*layers)
         self.ln = norm_layer(hidden_dim, rngs=rngs)
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        input = input + self.pos_embedding.value  # noqa: A001
-        return self.ln(self.layers(self.dropout(input)))
+    def __call__(self, inputs: Array) -> Array:
+        inputs = inputs + self.pos_embedding.value
+        return self.ln(self.layers(self.dropout(inputs)))
 
 
 class VisionTransformer(nnx.Module):
@@ -159,23 +167,27 @@ class VisionTransformer(nnx.Module):
 
         if conv_stem_configs is not None:
             # As per https://arxiv.org/abs/2104.14881
-            seq_proj = []
+            self.seq_proj_layers = {}
             prev_channels = 3
-            for _i, conv_stem_layer_config in enumerate(conv_stem_configs):
-                seq_proj.append(
-                    Conv2dNormActivation(
-                        in_channels=prev_channels,
-                        out_channels=conv_stem_layer_config.out_channels,
-                        kernel_size=conv_stem_layer_config.kernel_size,
-                        stride=conv_stem_layer_config.stride,
-                        norm_layer=conv_stem_layer_config.norm_layer,
-                        activation_layer=conv_stem_layer_config.activation_layer,
-                        rngs=rngs,
-                    )
+            for i, conv_stem_layer_config in enumerate(conv_stem_configs):
+                layer_name = f"conv_bn_relu_{i}"
+                self.conv_proj[layer_name] = Conv2dNormActivation(
+                    in_channels=prev_channels,
+                    out_channels=conv_stem_layer_config.out_channels,
+                    kernel_size=conv_stem_layer_config.kernel_size,
+                    stride=conv_stem_layer_config.stride,
+                    norm_layer=conv_stem_layer_config.norm_layer,
+                    activation_layer=conv_stem_layer_config.activation_layer,
+                    rngs=rngs,
                 )
                 prev_channels = conv_stem_layer_config.out_channels
-            seq_proj.append(nnx.Conv(prev_channels, hidden_dim, kernel_size=(1, 1), rngs=rngs))
-            self.conv_proj: nnx.Module = nnx.Sequential(*seq_proj)
+            self.seq_proj_layers["conv_last"] = nnx.Conv(
+                prev_channels,
+                hidden_dim,
+                kernel_size=(1, 1),
+                rngs=rngs,
+            )
+            self.conv_proj = None
         else:
             self.conv_proj = nnx.Conv(
                 3,
@@ -188,7 +200,7 @@ class VisionTransformer(nnx.Module):
         seq_length = (image_size // patch_size) ** 2
 
         # Add a class token
-        self.class_token = nnx.Param(jnp.zeros((1, 1, hidden_dim)))
+        self.class_token = nnx.Param(nnx.initializers.zeros(rngs.params(), (1, 1, hidden_dim)))
         seq_length += 1
 
         self.encoder = Encoder(
@@ -205,15 +217,42 @@ class VisionTransformer(nnx.Module):
 
         self.seq_length = seq_length
 
-        heads_layers = []
+        self.heads_layers = {}
         if representation_size is None:
-            heads_layers.append(nnx.Linear(hidden_dim, num_classes, rngs=rngs))
+            self.heads_layers["head"] = nnx.Linear(hidden_dim, num_classes, rngs=rngs)
         else:
-            heads_layers.append(nnx.Linear(hidden_dim, representation_size, rngs=rngs))
-            heads_layers.append(nnx.tanh)
-            heads_layers.append(nnx.Linear(representation_size, num_classes, rngs=rngs))
+            self.heads_layers["pre_logits"] = nnx.Linear(hidden_dim, representation_size, rngs=rngs)
+            self.heads_layers["act"] = nnx.tanh
+            self.heads_layers["head"] = nnx.Linear(representation_size, num_classes, rngs=rngs)
 
-        self.heads = nnx.Sequential(*heads_layers)
+        self.heads = lambda x: self._run_heads(x, self.heads_layers)
+
+        if isinstance(self.conv_proj, nnx.Conv):
+            # Init the patchify stem
+            fan_in = self.conv_proj.in_features * self.conv_proj.kernel_size[0] * self.conv_proj.kernel_size[1]
+            self.conv_proj.kernel_init = nnx.initializers.truncated_normal(stddev=math.sqrt(1 / fan_in))
+            if self.conv_proj.bias is not None:
+                self.conv_proj.bias_init = nnx.initializers.zeros_init()
+        elif self.seq_proj_layers["conv_last"] is not None and isinstance(self.seq_proj_layers["conv_last"], nnx.Conv):
+            self.seq_proj_layers["conv_last"].kernel_init = nnx.initializers.normal(
+                stddev=math.sqrt(2.0 / self.seq_proj_layers["conv_last"].out_features)
+            )
+        if hasattr(self.heads_layers, "pre_logits") and isinstance(self.heads_layers["pre_logits"], nnx.Linear):
+            fan_in = self.heads_layers["pre_logits"].in_features
+            self.heads_layers["pre_logits"].kernel_init = nnx.initializers.truncated_normal(
+                stddev=math.sqrt(1 / fan_in)
+            )
+            self.heads_layers["pre_logits"].bias_init = nnx.initializers.zeros_init()
+        if isinstance(self.heads_layers["head"], nnx.Linear):
+            self.heads_layers["head"].kernel_init = nnx.initializers.zeros_init()
+            self.heads_layers["head"].bias_init = nnx.initializers.zeros_init()
+
+    def _run_heads(self, x, layers_dict):
+        if "pre_logits" in layers_dict:
+            x = layers_dict["pre_logits"](x)
+            x = layers_dict["act"](x)
+        x = layers_dict["head"](x)
+        return x
 
     def _process_input(self, x: Array) -> Array:
         n, h, w, c = x.shape

@@ -2,6 +2,7 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
 from jax import Array
@@ -39,7 +40,7 @@ class CNBlock(nnx.Module):
             nnx.gelu,
             nnx.Linear(in_features=4 * dim, out_features=dim, use_bias=True, rngs=rngs),
         )
-        self.layer_scale = nnx.Param(jnp.full(shape=(1, 1, 1, dim), fill_value=layer_scale))
+        self.layer_scale = nnx.Param(nnx.initializers.constant(layer_scale)(rngs.params(), (1, 1, 1, dim)))
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row", rngs=rngs)
 
     def __call__(self, inputs: Array) -> Array:
@@ -144,6 +145,12 @@ class ConvNeXt(nnx.Module):
             norm_layer(lastconv_output_channels, rngs=rngs),
             nnx.Linear(lastconv_output_channels, num_classes, rngs=rngs),
         )
+
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv | nnx.Linear):
+                m.kernel_init = nnx.initializers.truncated_normal(stddev=0.02)
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
 
     def __call__(self, x: Array) -> Array:
         x = self.features(x)

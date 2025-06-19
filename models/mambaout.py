@@ -3,7 +3,8 @@ from functools import partial
 import jax.numpy as jnp
 from flax import nnx
 from jax import Array
-from layers.drop import DropPath
+
+from ops.misc import DropPath
 
 
 class StemLayer(nnx.Module):
@@ -361,27 +362,14 @@ class MambaOut(nnx.Module):
         # Classification head
         self.head = head_fn(dims[-1], num_classes, head_dropout=head_dropout, rngs=rngs)
 
-    def forward_features(self, x: Array) -> Array:
-        """
-        Performs the forward pass through the feature extraction backbone.
+        self._init_weights()
 
-        Args:
-            x: Input image (N, H, W, C).
-
-        Returns:
-            Aggregated features for the classification head.
-
-        """
-        # Iterate through each stage (downsample + blocks)
-        for i in range(self.num_stages):
-            x = self.downsample_layers[i](x)  # Apply downsampling
-            # Apply all blocks in the current stage
-            for block in self.stages[i]:
-                x = block(x)
-
-        # Global average pooling over spatial dimensions (H, W)
-        # Then apply output normalization
-        return self.norm(x.mean(axis=(1, 2)))
+    def _init_weights(self):
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv | nnx.Linear):
+                m.kernel_init = nnx.initializers.truncated_normal(stddev=0.02)
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.constant(0)
 
     def __call__(self, x: Array) -> Array:
         """
@@ -394,7 +382,14 @@ class MambaOut(nnx.Module):
             Output logits.
 
         """
-        x = self.forward_features(x)  # Extract features
+        for i in range(self.num_stages):
+            x = self.downsample_layers[i](x)  # Apply downsampling
+            # Apply all blocks in the current stage
+            for block in self.stages[i]:
+                x = block(x)
+
+        # Then apply output normalization
+        x = self.norm(x.mean(axis=(1, 2)))  # Extract features
         return self.head(x)  # Pass to classification head
 
 

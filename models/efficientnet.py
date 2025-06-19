@@ -181,11 +181,11 @@ class MBConv(nnx.Module):
         self.stochastic_depth = StochasticDepth(rate=stochastic_depth_prob, mode="row", rngs=rngs)
         self.out_channels = cnf.out_channels
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        result = self.block(input)
+    def __call__(self, inputs: Array) -> Array:
+        result = self.block(inputs)
         if self.use_res_connect:
             result = self.stochastic_depth(result)
-            result += input
+            result += inputs
         return result
 
 
@@ -253,11 +253,11 @@ class FusedMBConv(nnx.Module):
         self.stochastic_depth = StochasticDepth(rate=stochastic_depth_prob, mode="row", rngs=rngs)
         self.out_channels = cnf.out_channels
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        result = self.block(input)
+    def __call__(self, inputs: Array) -> Array:
+        result = self.block(inputs)
         if self.use_res_connect:
             result = self.stochastic_depth(result)
-            result += input
+            result += inputs
         return result
 
 
@@ -356,6 +356,19 @@ class EfficientNet(nnx.Module):
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(lastconv_output_channels, num_classes, rngs=rngs),
         )
+
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
+                m.scale_init = nnx.initializers.ones_init()
+                m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.Linear):
+                init_range = 1.0 / math.sqrt(m.out_features)
+                m.kernel_init = nnx.initializers.truncated_normal(lower=-init_range, upper=init_range)
+                m.bias_init = nnx.initializers.zeros_init()
 
     def __call__(self, x: Array) -> Array:
         x = self.features(x)

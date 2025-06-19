@@ -23,6 +23,7 @@ class VGG(nnx.Module):
         self,
         features: nnx.Module,
         num_classes: int = 1000,
+        init_weights: bool = True,
         dropout: float = 0.5,
         *,
         rngs: nnx.Rngs,
@@ -38,6 +39,18 @@ class VGG(nnx.Module):
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(4096, num_classes, rngs=rngs),
         )
+        if init_weights:
+            for _, m in self.iter_modules():
+                if isinstance(m, nnx.Conv):
+                    m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+                    if m.bias is not None:
+                        m.bias_init = nnx.initializers.constant(0)
+                    elif isinstance(m, nnx.BatchNorm):
+                        m.scale_init = nnx.initializers.constant(1)
+                        m.bias_init = nnx.initializers.constant(0)
+                    elif isinstance(m, nnx.Linear):
+                        m.kernel_init = nnx.initializers.normal(stddev=0.01)
+                        m.bias_init = nnx.initializers.constant(0)
 
     def __call__(self, x: Array) -> Array:
         x = self.features(x)

@@ -1,3 +1,4 @@
+import warnings
 from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
@@ -22,6 +23,7 @@ class GoogLeNet(nnx.Module):
         num_classes: int = 1000,
         aux_logits: bool = True,
         transform_input: bool = False,
+        init_weights: bool | None = None,
         blocks: list[Callable[..., nnx.Module]] | None = None,
         dropout: float = 0.2,
         dropout_aux: float = 0.7,
@@ -32,6 +34,15 @@ class GoogLeNet(nnx.Module):
         super().__init__()
         if blocks is None:
             blocks = [BasicConv2d, Inception, InceptionAux]
+        if init_weights is None:
+            warnings.warn(
+                "The default weight initialization of GoogleNet will be changed in future releases of "
+                "torchvision. If you wish to keep the old behavior (which leads to long initialization times"
+                " due to scipy/scipy#11299), please set init_weights=True.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            init_weights = True
         if len(blocks) != 3:  # noqa: PLR2004
             msg = f"blocks length should be 3 instead of {len(blocks)}"
             raise ValueError(msg)
@@ -44,27 +55,22 @@ class GoogLeNet(nnx.Module):
         self.transform_input = transform_input
         self.deterministic = deterministic
 
-        # 基础卷积层
         self.conv1 = conv_block(3, 64, kernel_size=(7, 7), strides=(2, 2), padding="SAME", rngs=rngs)
         self.conv2 = conv_block(64, 64, kernel_size=(1, 1), rngs=rngs)
         self.conv3 = conv_block(64, 192, kernel_size=(3, 3), padding="SAME", rngs=rngs)
 
-        # Inception 3层
         self.inception3a = inception_block(192, 64, 96, 128, 16, 32, 32, rngs=rngs)
         self.inception3b = inception_block(256, 128, 128, 192, 32, 96, 64, rngs=rngs)
 
-        # Inception 4层
         self.inception4a = inception_block(480, 192, 96, 208, 16, 48, 64, rngs=rngs)
         self.inception4b = inception_block(512, 160, 112, 224, 24, 64, 64, rngs=rngs)
         self.inception4c = inception_block(512, 128, 128, 256, 24, 64, 64, rngs=rngs)
         self.inception4d = inception_block(512, 112, 144, 288, 32, 64, 64, rngs=rngs)
         self.inception4e = inception_block(528, 256, 160, 320, 32, 128, 128, rngs=rngs)
 
-        # Inception 5层
         self.inception5a = inception_block(832, 256, 160, 320, 32, 128, 128, rngs=rngs)
         self.inception5b = inception_block(832, 384, 192, 384, 48, 128, 128, rngs=rngs)
 
-        # 辅助分类器
         if aux_logits:
             self.aux1 = inception_aux_block(512, num_classes, dropout=dropout_aux, rngs=rngs)
             self.aux2 = inception_aux_block(528, num_classes, dropout=dropout_aux, rngs=rngs)
@@ -72,19 +78,24 @@ class GoogLeNet(nnx.Module):
             self.aux1 = None
             self.aux2 = None
 
-        # 最终分类层
-        self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
-        self.fc = nnx.Linear(1024, num_classes, rngs=rngs)
-
-        # 预定义的池化层（不需要参数）  # noqa: RUF003
         self.maxpool1 = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
         self.maxpool2 = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
         self.maxpool3 = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
         self.maxpool4 = partial(nnx.max_pool, window_shape=(2, 2), strides=(2, 2), padding="SAME")
 
+        self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
+        self.fc = nnx.Linear(1024, num_classes, rngs=rngs)
+
+        if init_weights:
+            for _, m in self.iter_modules():
+                if isinstance(m, nnx.Conv | nnx.Linear):
+                    m.kernel_init = nnx.initializers.truncated_normal(stddev=0.01, lower=-2, upper=2)
+                elif isinstance(m, nnx.BatchNorm):
+                    m.scale_init = nnx.initializers.ones_init()
+                    m.bias_init = nnx.initializers.constant(0)
+
     def _transform_input(self, x: Array) -> Array:
         if self.transform_input:
-            # ImageNet normalization
             mean = jnp.array([0.485, 0.456, 0.406])
             std = jnp.array([0.229, 0.224, 0.225])
             x = (x - mean) / std

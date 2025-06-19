@@ -370,7 +370,7 @@ class RegNet(nnx.Module):
         current_width = stem_width
 
         blocks = []
-        for i, (
+        for _i, (
             width_out,
             stride,
             depth,
@@ -389,7 +389,6 @@ class RegNet(nnx.Module):
                     group_width,
                     bottleneck_multiplier,
                     block_params.se_ratio,
-                    stage_index=i + 1,
                     rngs=rngs,
                 )
             )
@@ -398,6 +397,18 @@ class RegNet(nnx.Module):
         self.trunk_output = nnx.Sequential(*blocks)
 
         self.fc = nnx.Linear(current_width, num_classes, rngs=rngs)
+
+        # Performs ResNet-style weight initialization
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                fan_out = m.kernel.value.shape[0] * m.kernel.value.shape[1] * m.out_features
+                m.kernel_init = nnx.initializers.normal(stddev=math.sqrt(2.0 / fan_out))
+            elif isinstance(m, nnx.BatchNorm):
+                m.scale_init = nnx.initializers.ones_init()
+                m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.normal(stddev=0.01)
+                m.bias_init = nnx.initializers.zeros_init()
 
     def __call__(self, x: Array) -> Array:
         x = self.stem(x)

@@ -189,6 +189,19 @@ class MobileNetV2(nnx.Module):
             nnx.Linear(self.last_channel, num_classes, rngs=rngs),
         )
 
+        # weight initialization
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
+                m.scale_init = nnx.initializers.ones_init()
+                m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.normal(stddev=0.01)
+                m.bias_init = nnx.initializers.zeros_init()
+
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = x.mean(axis=(1, 2))

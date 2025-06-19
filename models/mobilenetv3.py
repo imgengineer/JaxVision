@@ -112,10 +112,10 @@ class InvertResidual(nnx.Module):
         self.out_channels = cnf.out_channels
         self._is_cn = cnf.stride > 1
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        result = self.block(input)
+    def __call__(self, inputs: Array) -> Array:
+        result = self.block(inputs)
         if self.use_res_connect:
-            result += input
+            result += inputs
         return result
 
 
@@ -202,6 +202,18 @@ class MobileNetV3(nnx.Module):
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(last_channel, num_classes, rngs=rngs),
         )
+
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
+                m.scale_init = nnx.initializers.ones_init()
+                m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.normal(stddev=0.01)
+                m.bias_init = nnx.initializers.zeros_init()
 
     def __call__(self, x: Array) -> Array:
         x = self.features(x)

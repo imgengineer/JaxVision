@@ -54,8 +54,8 @@ class _DenseLayer(nnx.Module):
         concated_features = jnp.concat(inputs, axis=3)
         return self.conv1(nnx.relu(self.norm1(concated_features)))
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
-        prev_features = [input] if isinstance(input, Array) else input
+    def __call__(self, inputs: Array) -> Array:
+        prev_features = [inputs] if isinstance(inputs, Array) else inputs
 
         bottleneck_output = self.bn_function(prev_features)
 
@@ -189,6 +189,16 @@ class DenseNet(nnx.Module):
         self.features = nnx.Sequential(*features)
 
         self.classifier = nnx.Linear(num_features, num_classes, rngs=rngs)
+
+        # Official init from torch repo
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.kaiming_normal()
+            elif isinstance(m, nnx.BatchNorm):
+                m.scale_init = nnx.initializers.constant(1)
+                m.bias_init = nnx.initializers.constant(0)
+            elif isinstance(m, nnx.Linear):
+                m.bias_init = nnx.initializers.constant(0)
 
     def __call__(self, x: Array) -> Array:
         features = self.features(x)

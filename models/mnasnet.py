@@ -172,6 +172,18 @@ class MNASNet(nnx.Module):
         self.layers = nnx.Sequential(*layers)
         self.classifier = nnx.Sequential(nnx.Dropout(rate=dropout, rngs=rngs), nnx.Linear(1280, num_classes, rngs=rngs))
 
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.BatchNorm):
+                m.scale_init = nnx.initializers.ones_init()
+                m.bias_init = nnx.initializers.zeros_init()
+            elif isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+                m.bias_init = nnx.initializers.zeros_init()
+
     def __call__(self, x: Array) -> Array:
         x = self.layers(x)
         x = x.mean(axis=(1, 2))

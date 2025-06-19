@@ -273,7 +273,10 @@ class ShiftedWindowAttention(nnx.Module):
     def define_relative_position_bias_table(self):
         # define a parameter table of relative position bias
         self.relative_position_bias_table = nnx.Param(
-            jnp.zeros(((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads))
+            nnx.initializers.zeros(
+                self.rngs.params(),
+                shape=((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
+            )
         )
         # 2*Wh-1 * 2*Ww-1, nH
         # nn.init.trunc_normal_(self.relative_position_bias_table, std=0.02)
@@ -478,18 +481,13 @@ class SwinTransformerBlock(nnx.Module):
         self.norm2 = norm_layer(dim, rngs=rngs)
         self.mlp = MLP(dim, [int(dim * mlp_ratio), dim], activation_layer=nnx.gelu, dropout=dropout, rngs=rngs)
 
-        for layer in self.mlp.layers:
-            if isinstance(layer, nnx.Linear):
-                layer.kernel.value = jax.random.uniform(
-                    rngs.params(),
-                    layer.kernel.value.shape,
-                    minval=-math.sqrt(6 / (layer.kernel.value.shape[0] + layer.kernel.value.shape[1])),
-                    maxval=math.sqrt(6 / (layer.kernel.value.shape[0] + layer.kernel.value.shape[1])),
-                )
-                if layer.bias is not None:
-                    layer.bias.value = jax.random.normal(rngs.params(), layer.kernel.value.shape) * 1e-6
+        for m in self.mlp.iter_modules():
+            if isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.xavier_uniform()
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.normal(stddev=1e-6)
 
-    def __call__(self, x: Array):
+    def __call__(self, x: Array) -> Array:
         x = x + self.stochastic_depth(self.attn(self.norm1(x)))
         x = x + self.stochastic_depth(self.mlp(self.norm2(x)))
         return x
@@ -643,11 +641,11 @@ class SwinTransformer(nnx.Module):
         self.norm = norm_layer(num_features, rngs=rngs)
         self.head = nnx.Linear(num_features, num_classes, rngs=rngs)
 
-        self.head.kernel.value = (
-            jax.random.truncated_normal(rngs.params(), -2, 2, self.head.kernel.value.shape, dtype=jnp.float32) * 0.02
-        )
-        if self.head.bias is not None:
-            self.head.bias.value = jnp.zeros(self.head.bias.value.shape, dtype=jnp.float32)
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Linear):
+                m.kernel_init = nnx.initializers.truncated_normal(stddev=0.02)
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
 
     def __call__(self, x):
         x = self.features(x)

@@ -176,7 +176,7 @@ class RelativePositionMultiHeadAttention(nnx.Module):
 
         self.merge = nnx.Linear(self.head_dim * self.n_heads, feat_dim, rngs=rngs)
         self.relative_position_bias_table = nnx.Param(
-            jnp.empty(((2 * self.size - 1) * (2 * self.size - 1), self.n_heads), dtype=jnp.float32)
+            nnx.initializers.zeros(rngs.params(), shape=((2 * self.size - 1) * (2 * self.size - 1), self.n_heads))
         )
 
         self.relative_position_index = _get_relative_position_index(self.size, self.size)
@@ -693,6 +693,8 @@ class MaxVit(nnx.Module):
             nnx.Linear(block_channels[-1], num_classes, use_bias=False, rngs=rngs),
         )
 
+        self._init_weights()
+
     def __call__(self, x: Array) -> Array:
         x = self.stem(x)
         for block in self.blocks:
@@ -700,6 +702,20 @@ class MaxVit(nnx.Module):
         x = x.mean(axis=(1, 2))
         x = self.classifier(x)
         return x
+
+    def _init_weights(self):
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.normal(stddev=0.02)
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.zeros_init()
+                elif isinstance(m, nnx.BatchNorm):
+                    m.scale_init = nnx.initializers.constant(1)
+                    m.bias_init = nnx.initializers.constant(0)
+                elif isinstance(m, nnx.Linear):
+                    m.kernel_init = nnx.initializers.normal(stddev=0.02)
+                    if m.bias is not None:
+                        m.bias_init = nnx.initializers.zeros_init()
 
 
 def _maxvit(  # noqa: PLR0913

@@ -232,6 +232,22 @@ class ResNet(nnx.Module):
         )
         self.fc = nnx.Linear(512 * block.expansion, num_classes, rngs=rngs)
 
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
+            elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
+                m.scale_init = nnx.initializers.constant(1)
+                m.bias_init = nnx.initializers.constant(0)
+        # Zero-initialize the last BN in each residual branch,
+        # so that the residual branch starts with zeros, and each residual block behaves like an identity.
+        # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
+        if zero_init_residual:
+            for _, m in self.iter_modules():
+                if isinstance(m, Bottleneck) and m.bn3.scale is not None:
+                    m.bn3.scale_init = nnx.initializers.constant(0)
+                elif isinstance(m, BasicBlock) and m.bn2.scale is not None:
+                    m.bn2.scale_init = nnx.initializers.constant(0)
+
     def _make_layer(  # noqa: PLR0913
         self,
         block: type[BasicBlock | Bottleneck],

@@ -72,6 +72,15 @@ class SqueezeNet(nnx.Module):
             nnx.relu,
         )
 
+        for _, m in self.iter_modules():
+            if isinstance(m, nnx.Conv):
+                if m is final_conv:
+                    m.kernel_init = nnx.initializers.normal(stddev=0.01)
+                else:
+                    m.kernel_init = nnx.initializers.kaiming_uniform()
+                if m.bias is not None:
+                    m.bias_init = nnx.initializers.constant(0)
+
     def __call__(self, x: Array) -> Array:
         x = self.features(x)
         x = self.classifier(x)

@@ -77,6 +77,15 @@ class Inception3(nnx.Module):
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         self.fc = nnx.Linear(2048, num_classes, rngs=rngs)
 
+        if init_weights:
+            for _, m in self.iter_modules():
+                if isinstance(m, nnx.Conv | nnx.Linear):
+                    stddev = float(m.stddev) if hasattr(m, "stddev") else 0.1
+                    m.kernel_init = nnx.initializers.truncated_normal(stddev=stddev, lower=-2, upper=2)
+                elif isinstance(m, nnx.BatchNorm):
+                    m.scale_init = nnx.initializers.constant(1)
+                    m.bias_init = nnx.initializers.constant(0)
+
     def __call__(self, x: Array):
         # N x 3 x 299 x 299
         x = self.Conv2d_1a_3x3(x)
