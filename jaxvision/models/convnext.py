@@ -2,10 +2,11 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
+import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import GELU, Conv2dNormActivation
+from ..ops.misc import Conv2dNormActivation
 from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -27,7 +28,6 @@ class CNBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if norm_layer is None:
             norm_layer = partial(nnx.LayerNorm, epsilon=1e-6)
 
@@ -35,10 +35,10 @@ class CNBlock(nnx.Module):
             nnx.Conv(dim, dim, kernel_size=(7, 7), padding="SAME", feature_group_count=dim, use_bias=True, rngs=rngs),
             norm_layer(dim, rngs=rngs),
             nnx.Linear(in_features=dim, out_features=4 * dim, use_bias=True, rngs=rngs),
-            GELU(),
+            nnx.gelu,
             nnx.Linear(in_features=4 * dim, out_features=dim, use_bias=True, rngs=rngs),
         )
-        self.layer_scale = nnx.Param(nnx.initializers.constant(layer_scale)(rngs.params(), (1, 1, 1, dim)))
+        self.layer_scale = nnx.Param(jnp.full(shape=(1, 1, 1, dim), fill_value=layer_scale))
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row", rngs=rngs)
 
     def __call__(self, inputs: Array) -> Array:
@@ -81,8 +81,6 @@ class ConvNeXt(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
-
         if not block_setting:
             msg = "The block_setting should not be empty"
             raise ValueError(msg)

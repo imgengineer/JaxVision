@@ -1,6 +1,7 @@
 import cv2
 import grain
 import numpy as np
+from PIL import Image
 
 
 class AlbumentationsTransform(grain.transforms.Map):
@@ -13,8 +14,15 @@ class AlbumentationsTransform(grain.transforms.Map):
         return transformed_image, label
 
 
-class LoadImageMap(grain.transforms.Map):
+class OpenCVLoadImageMap(grain.transforms.Map):
     def map(self, element: tuple[str, int]) -> tuple[np.ndarray, int]:
         img_path, label = element
         img = cv2.imread(img_path, cv2.IMREAD_COLOR_RGB)
+        return img, label
+
+
+class PILoadImageMap(grain.transforms.Map):
+    def map(self, element: tuple[str, int]) -> tuple[np.ndarray, int]:
+        img_path, label = element
+        img = np.asarray(Image.open(img_path).convert(mode="RGB"))
         return img, label

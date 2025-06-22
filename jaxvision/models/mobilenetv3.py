@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import Conv2dNormActivation, Hardsigmoid, Hardswish, ReLU
+from ..ops.misc import Conv2dNormActivation
 from ..ops.misc import SqueezeExtraction as SElayer
 from ._utils import _make_divisible
 
@@ -51,11 +51,10 @@ class InvertResidual(nnx.Module):
         self,
         cnf: InvertedResidualConfig,
         norm_layer: Callable[..., nnx.Module],
-        se_layer: Callable[..., nnx.Module] = partial(SElayer, scale_activation=Hardsigmoid),  # noqa: B008
+        se_layer: Callable[..., nnx.Module] = partial(SElayer, scale_activation=nnx.hard_sigmoid),  # noqa: B008
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
             msg = "illegal stride value"
             raise ValueError(msg)
@@ -63,7 +62,7 @@ class InvertResidual(nnx.Module):
         self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
 
         layers: list[nnx.Module] = []
-        activation_layer = Hardsigmoid if cnf.use_hs else ReLU
+        activation_layer = nnx.hard_sigmoid if cnf.use_hs else nnx.relu
 
         # expand
         if cnf.expanded_channels != cnf.input_channels:
@@ -142,8 +141,6 @@ class MobileNetV3(nnx.Module):
             dropout (float): The droupout probability
 
         """
-        super().__init__()
-
         if not inverted_residual_setting:
             msg = "The inverted_residual_setting should not be empty"
             raise ValueError(msg)
@@ -171,7 +168,7 @@ class MobileNetV3(nnx.Module):
                 kernel_size=3,
                 stride=2,
                 norm_layer=norm_layer,
-                activation_layer=Hardswish,
+                activation_layer=nnx.hard_swish,
                 rngs=rngs,
             ),
         )
@@ -188,7 +185,7 @@ class MobileNetV3(nnx.Module):
                 lastconv_output_channels,
                 kernel_size=1,
                 norm_layer=norm_layer,
-                activation_layer=Hardswish,
+                activation_layer=nnx.hard_swish,
                 rngs=rngs,
             ),
         )
@@ -196,7 +193,7 @@ class MobileNetV3(nnx.Module):
         self.features = nnx.Sequential(*layers)
         self.classifier = nnx.Sequential(
             nnx.Linear(lastconv_output_channels, last_channel, rngs=rngs),
-            Hardswish(),
+            nnx.hard_swish,
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(last_channel, num_classes, rngs=rngs),
         )

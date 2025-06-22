@@ -9,72 +9,20 @@ from flax.nnx.module import first_from
 from jax import Array
 
 
-class ReLU(nnx.Module):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.relu(inputs)
-
-
-class Sigmoid(nnx.Module):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.sigmoid(inputs)
-
-
-class GELU(nnx.Module):
-    def __init__(self, *, approximate: bool = True):
-        super().__init__()
-        self.approximate = approximate
-
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.gelu(inputs, approximate=self.approximate)
-
-
-class SiLU(nnx.Module):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.silu(inputs)
-
-
-class ReLU6(nnx.Module):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.relu6(inputs)
-
-
-class Hardsigmoid(nnx.Module):
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.hard_sigmoid(inputs)
-
-
-class Hardswish(nnx.Module):
-    def __call__(self, inputs: Array) -> Array:
-        return nnx.hard_swish(inputs)
-
-
 class SqueezeExtraction(nnx.Module):
     def __init__(
         self,
         input_channels: int,
         squeeze_channels: int,
-        activation: Callable[..., nnx.Module] = ReLU,
-        scale_activation: Callable[..., nnx.Module] = Sigmoid,
+        activation: Callable[..., nnx.Module] = nnx.relu,
+        scale_activation: Callable[..., nnx.Module] = nnx.sigmoid,
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         self.fc1 = nnx.Conv(input_channels, squeeze_channels, kernel_size=(1, 1), rngs=rngs)
         self.fc2 = nnx.Conv(squeeze_channels, input_channels, kernel_size=(1, 1), rngs=rngs)
-        self.activation = activation()
-        self.scale_activation = scale_activation()
+        self.activation = activation
+        self.scale_activation = scale_activation
 
     def _scale(self, x: Array) -> Array:
         scale = x.mean(axis=(1, 2), keepdims=True)
@@ -94,7 +42,7 @@ class MLP(nnx.Sequential):
         in_channels: int,
         hidden_channels: list[int],
         norm_layer: Callable[..., nnx.Module] | None = None,
-        activation_layer: Callable[..., nnx.Module] | None = ReLU,
+        activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
         dropout: float = 0.0,
         *,
         bias: bool = False,
@@ -106,7 +54,7 @@ class MLP(nnx.Sequential):
             layers.append(nnx.Linear(in_dim, hidden_dim, use_bias=bias, rngs=rngs))
             if norm_layer is not None:
                 layers.append(norm_layer(hidden_dim, rngs=rngs))
-            layers.append(activation_layer())
+            layers.append(activation_layer)
             layers.append(nnx.Dropout(rate=dropout, rngs=rngs))
             in_dim = hidden_dim
         layers.append(nnx.Linear(in_dim, hidden_channels[-1], use_bias=bias, rngs=rngs))
@@ -115,19 +63,7 @@ class MLP(nnx.Sequential):
         super().__init__(*layers)
 
 
-class Permute(nnx.Module):
-    def __init__(self, dims: tuple[int, ...]):
-        super().__init__()
-        self.dims = dims
-
-    def __call__(self, inputs: Array) -> Array:
-        return inputs.transpose(self.dims)
-
-
 class Identity(nnx.Module):
-    def __init__(self):
-        super().__init__()
-
     def __call__(self, inputs: Array) -> Array:
         return inputs
 
@@ -172,14 +108,13 @@ class Conv2dNormActivation(nnx.Sequential):
         padding: int | tuple[int, int] | str | None = None,
         groups: int = 1,
         norm_layer: Callable[..., nnx.Module] | None = nnx.BatchNorm,
-        activation_layer: Callable[..., nnx.Module] | None = ReLU,
+        activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
         dilation: int | tuple[int, ...] = 1,
         conv_layer: Callable[..., nnx.Module] = nnx.Conv,
         *,
         bias: bool | None = None,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if padding is None:
             padding = "SAME"
         if bias is None:
@@ -203,7 +138,7 @@ class Conv2dNormActivation(nnx.Sequential):
             layers.append(norm_layer(out_channels, rngs=rngs))
 
         if activation_layer is not None:
-            layers.append(activation_layer())
+            layers.append(activation_layer)
 
         self.out_channels = out_channels
         super().__init__(*layers)

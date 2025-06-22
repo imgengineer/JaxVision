@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import Conv2dNormActivation, SiLU, SqueezeExtraction
+from ..ops.misc import Conv2dNormActivation, SqueezeExtraction
 from ..ops.stochastic_depth import StochasticDepth
 from ._utils import _make_divisible
 
@@ -114,7 +114,6 @@ class MBConv(nnx.Module):
         deterministic: bool = False,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
 
         if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
             msg = "illegal stride value"
@@ -123,7 +122,7 @@ class MBConv(nnx.Module):
         self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
 
         layers: list[nnx.Module] = []
-        activation_layer = SiLU
+        activation_layer = nnx.silu
 
         # expand
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
@@ -158,7 +157,7 @@ class MBConv(nnx.Module):
             se_layer(
                 expanded_channels,
                 squeeze_channels,
-                activation=SiLU,
+                activation=nnx.silu,
                 rngs=rngs,
             ),
         )
@@ -198,7 +197,6 @@ class FusedMBConv(nnx.Module):
         rngs: nnx.Rngs,
         deterministic: bool = False,
     ) -> None:
-        super().__init__()
 
         if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
             msg = "illegal stride value"
@@ -207,7 +205,7 @@ class FusedMBConv(nnx.Module):
         self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
 
         layers: list[nnx.Module] = []
-        activation_layer = SiLU
+        activation_layer = nnx.silu
 
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
         if expanded_channels != cnf.input_channels:
@@ -283,8 +281,6 @@ class EfficientNet(nnx.Module):
             last_channel (int): The number of channels on the penultimate layer
 
         """
-        super().__init__()
-
         if not inverted_residual_setting:
             msg = "The inverted_residual_setting should not be empty"
             raise ValueError(msg)
@@ -308,7 +304,7 @@ class EfficientNet(nnx.Module):
                 kernel_size=3,
                 stride=2,
                 norm_layer=norm_layer,
-                activation_layer=SiLU,
+                activation_layer=nnx.silu,
                 rngs=rngs,
             ),
         )
@@ -344,7 +340,7 @@ class EfficientNet(nnx.Module):
                 lastconv_output_channels,
                 kernel_size=1,
                 norm_layer=norm_layer,
-                activation_layer=SiLU,
+                activation_layer=nnx.silu,
                 rngs=rngs,
             ),
         )

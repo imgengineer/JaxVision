@@ -3,11 +3,12 @@ from collections.abc import Callable
 from functools import partial
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import GELU, MLP, Conv2dNormActivation, ReLU
+from ..ops.misc import MLP, Conv2dNormActivation
 
 __all__ = [
     "VisionTransformer",
@@ -24,7 +25,7 @@ class ConvStemConfig(NamedTuple):
     kernel_size: int
     stride: int
     norm_layer: Callable[..., nnx.Module] = nnx.BatchNorm
-    activation_layer: Callable[..., nnx.Module] = (ReLU,)
+    activation_layer: Callable[..., nnx.Module] = nnx.relu
 
 
 class MLPBlock(MLP):
@@ -36,7 +37,7 @@ class MLPBlock(MLP):
         super().__init__(
             in_dim,
             [mlp_dim, in_dim],
-            activation_layer=GELU,
+            activation_layer=nnx.gelu,
             dropout=dropout,
             rngs=rngs,
         )
@@ -61,7 +62,6 @@ class EncoderBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         self.num_heads = num_heads
 
         # Attention block
@@ -106,11 +106,7 @@ class Encoder(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
-
-        self.pos_embedding = nnx.Param(
-            nnx.initializers.normal(stddev=0.02)(key=rngs.params(), shape=(1, seq_length, hidden_dim)),
-        )
+        self.pos_embedding = nnx.Param(jax.random.normal(rngs.params(), shape=(1, seq_length, hidden_dim)))
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         layers: list[nnx.Module] = []
         layers = [
@@ -153,7 +149,6 @@ class VisionTransformer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         self.image_size = image_size
         self.patch_size = patch_size
         self.hidden_dim = hidden_dim
@@ -198,7 +193,7 @@ class VisionTransformer(nnx.Module):
         seq_length = (image_size // patch_size) ** 2
 
         # Add a class token
-        self.class_token = nnx.Param(nnx.initializers.zeros(rngs.params(), (1, 1, hidden_dim)))
+        self.class_token = nnx.Param(jnp.zeros(shape=(1, 1, hidden_dim)))
         seq_length += 1
 
         self.encoder = Encoder(

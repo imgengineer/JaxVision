@@ -3,7 +3,7 @@ from collections.abc import Callable
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import Conv2dNormActivation, ReLU6
+from ..ops.misc import Conv2dNormActivation
 from ._utils import _make_divisible
 
 __all__ = ["MobileNetV2", "mobilenet_v2"]
@@ -20,7 +20,6 @@ class InvertedResidual(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         self.stride = stride
         if stride not in [1, 2]:
             msg = f"stride shoule be 1 or 2 instead {stride}"
@@ -41,7 +40,7 @@ class InvertedResidual(nnx.Module):
                     hidden_dim,
                     kernel_size=1,
                     norm_layer=norm_layer,
-                    activation_layer=ReLU6,
+                    activation_layer=nnx.relu6,
                     rngs=rngs,
                 ),
             )
@@ -54,7 +53,7 @@ class InvertedResidual(nnx.Module):
                     stride=stride,
                     groups=hidden_dim,
                     norm_layer=norm_layer,
-                    activation_layer=ReLU6,
+                    activation_layer=nnx.relu6,
                     rngs=rngs,
                 ),
                 # pw-linear
@@ -106,8 +105,6 @@ class MobileNetV2(nnx.Module):
             dropout (float): The droupout probability
 
         """
-        super().__init__()
-
         if block is None:
             block = InvertedResidual
 
@@ -145,7 +142,7 @@ class MobileNetV2(nnx.Module):
                 input_channel,
                 stride=2,
                 norm_layer=norm_layer,
-                activation_layer=ReLU6,
+                activation_layer=nnx.relu6,
                 rngs=rngs,
             ),
         ]
@@ -173,7 +170,7 @@ class MobileNetV2(nnx.Module):
                 self.last_channel,
                 kernel_size=1,
                 norm_layer=norm_layer,
-                activation_layer=ReLU6,
+                activation_layer=nnx.relu6,
                 rngs=rngs,
             ),
         )

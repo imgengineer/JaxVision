@@ -5,8 +5,6 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import ReLU
-
 __all__ = [
     "ShuffleNetV2",
     "shufflenet_v2_x0_5",
@@ -31,7 +29,6 @@ def channel_shuffle(x: Array, groups: int) -> Array:
 
 class InvertedResidual(nnx.Module):
     def __init__(self, inp: int, oup: int, stride: int, *, rngs: nnx.Rngs):
-        super().__init__()
 
         if not (1 <= stride <= 3):  # noqa: PLR2004
             msg = "illegal stride value"
@@ -64,7 +61,7 @@ class InvertedResidual(nnx.Module):
                     rngs=rngs,
                 ),
                 nnx.BatchNorm(branch_features, rngs=rngs),
-                ReLU(),
+            nnx.relu,
             )
         else:
             self.branch1 = nnx.Sequential()
@@ -80,7 +77,7 @@ class InvertedResidual(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(branch_features, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             self.depthwise_conv(
                 branch_features,
                 branch_features,
@@ -100,7 +97,7 @@ class InvertedResidual(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(branch_features, rngs=rngs),
-            ReLU(),
+            nnx.relu,
         )
 
     @staticmethod
@@ -136,8 +133,6 @@ class ShuffleNetV2(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
-
         if len(stages_repeats) != 3:  # noqa: PLR2004
             msg = "expected stages_repeats as list of 3 positive ints"
             raise ValueError(msg)
@@ -159,7 +154,7 @@ class ShuffleNetV2(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(output_channels, rngs=rngs),
-            ReLU(),
+            nnx.relu,
         )
         input_channels = output_channels
 
@@ -192,7 +187,7 @@ class ShuffleNetV2(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(output_channels, rngs=rngs),
-            ReLU(),
+            nnx.relu,
         )
 
         self.fc = nnx.Linear(output_channels, num_classes, rngs=rngs)

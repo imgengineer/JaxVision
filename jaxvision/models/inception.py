@@ -31,7 +31,6 @@ class Inception3(nnx.Module):
         transform_input: bool = False,
         deterministic: bool = False,
     ) -> None:
-        super().__init__()
         if inception_blocks is None:
             inception_blocks = [BasicConv2d, InceptionA, InceptionB, InceptionC, InceptionD, InceptionE, InceptionAux]
         if init_weights is None:
@@ -154,7 +153,6 @@ class InceptionA(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
         self.branch1x1 = conv_block(in_channels, 64, kernel_size=(1, 1), rngs=rngs)
@@ -193,7 +191,6 @@ class InceptionB(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
         self.branch3x3 = conv_block(in_channels, 384, kernel_size=(3, 3), strides=(2, 2), rngs=rngs)
@@ -225,7 +222,6 @@ class InceptionC(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
         self.branch1x1 = conv_block(in_channels, 192, kernel_size=(1, 1), rngs=rngs)
@@ -271,7 +267,6 @@ class InceptionD(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
         self.branch3x3_1 = conv_block(in_channels, 192, kernel_size=(1, 1), rngs=rngs)
@@ -305,7 +300,6 @@ class InceptionE(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
         self.branch1x1 = conv_block(in_channels, 320, kernel_size=(1, 1), rngs=rngs)
@@ -355,7 +349,6 @@ class InceptionAux(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
         self.conv0 = conv_block(in_channels, 128, kernel_size=(1, 1), rngs=rngs)
@@ -379,7 +372,6 @@ class InceptionAux(nnx.Module):
 
 class BasicConv2d(nnx.Module):
     def __init__(self, in_channels: int, out_channels: int, *, rngs: nnx.Rngs, **kwargs) -> None:
-        super().__init__()
         self.conv = nnx.Conv(in_channels, out_channels, use_bias=False, rngs=rngs, **kwargs)
         self.bn = nnx.BatchNorm(out_channels, rngs=rngs, epsilon=0.001)
 

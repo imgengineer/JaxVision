@@ -71,7 +71,6 @@ class BasicBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
         if groups != 1 or base_width != 64:  # noqa: PLR2004
@@ -127,7 +126,6 @@ class Bottleneck(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
         width = int(planes * (base_width / 64.0)) * groups
@@ -176,7 +174,6 @@ class ResNet(nnx.Module):
         zero_init_residual: bool = False,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
         self._norm_layer = norm_layer

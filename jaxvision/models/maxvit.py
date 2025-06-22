@@ -8,7 +8,7 @@ import numpy as np
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import GELU, Conv2dNormActivation, Identity, SiLU, SqueezeExtraction
+from ..ops.misc import Conv2dNormActivation, Identity, SqueezeExtraction
 from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -74,8 +74,6 @@ class MBConv(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
-
         proj: Sequence[nnx.Module]
         self.proj: nnx.Module
 
@@ -120,7 +118,7 @@ class MBConv(nnx.Module):
                     groups=mid_channels,
                     rngs=rngs,
                 ),
-                SqueezeExtraction(mid_channels, sqz_channels, activation=SiLU, rngs=rngs),
+                SqueezeExtraction(mid_channels, sqz_channels, activation=nnx.silu, rngs=rngs),
                 nnx.Conv(
                     mid_channels,
                     out_channels,
@@ -163,8 +161,6 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
-
         if feat_dim % head_dim != 0:
             msg = f"feat_dim: {feat_dim} must be divisible by head_dim: {head_dim}"
             raise ValueError(msg)
@@ -179,14 +175,17 @@ class RelativePositionMultiHeadAttention(nnx.Module):
 
         self.merge = nnx.Linear(self.head_dim * self.n_heads, feat_dim, rngs=rngs)
         self.relative_position_bias_table = nnx.Param(
-            nnx.initializers.zeros(rngs.params(), shape=((2 * self.size - 1) * (2 * self.size - 1), self.n_heads)),
+            jnp.zeros(shape=((2 * self.size - 1) * (2 * self.size - 1), self.n_heads)),
         )
-
         self.relative_position_index = _get_relative_position_index(self.size, self.size)
 
     def get_relative_positional_bias(self) -> Array:
         bias_index = self.relative_position_index.reshape(-1)
-        relative_bias = self.relative_position_bias_table[bias_index].reshape(self.max_seq_len, self.max_seq_len, -1)
+        relative_bias = self.relative_position_bias_table.value[bias_index].reshape(
+            self.max_seq_len,
+            self.max_seq_len,
+            -1,
+        )
         relative_bias = relative_bias.transpose(2, 0, 1)
         return jnp.expand_dims(relative_bias, axis=0)
 
@@ -224,7 +223,6 @@ class SwapAxes(nnx.Module):
     """Permute the axes of a tensor."""
 
     def __init__(self, a: int, b: int) -> None:
-        super().__init__()
         self.a = a
         self.b = b
 
@@ -234,9 +232,6 @@ class SwapAxes(nnx.Module):
 
 class WindowPartition(nnx.Module):
     """Partition the input tensor into non-overlapping windows."""
-
-    def __init__(self) -> None:
-        super().__init__()
 
     def __call__(self, x: Array, p: int) -> Array:
         """Args:
@@ -257,9 +252,6 @@ class WindowPartition(nnx.Module):
 
 class WindowDepartition(nnx.Module):
     """Departition the input tensor of non-overlapping windows into a feature volume of layout [B, C, H, W]."""
-
-    def __init__(self) -> None:
-        super().__init__()
 
     def __call__(self, x: Array, p: int, h_partitions: int, w_partitions: int) -> Array:
         """Args:
@@ -320,8 +312,6 @@ class PartitionAttentionLayer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
-
         self.n_heads = in_channels // head_dim
         self.head_dim = head_dim
         self.n_partitions = grid_size[0] // partition_size
@@ -350,7 +340,7 @@ class PartitionAttentionLayer(nnx.Module):
         self.mlp_layer = nnx.Sequential(
             nnx.LayerNorm(in_channels, rngs=rngs),
             nnx.Linear(in_channels, in_channels * mlp_ratio, rngs=rngs),
-            activation_layer(),
+            activation_layer,
             nnx.Linear(in_channels * mlp_ratio, in_channels, rngs=rngs),
             nnx.Dropout(mlp_dropout, rngs=rngs),
         )
@@ -418,7 +408,6 @@ class MaxVitLayer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         layers = []
         layers.extend(
             [
@@ -522,7 +511,6 @@ class MaxVitBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if len(p_stochastic) != n_layers:
             msg = f"p_stochastic must have length n_layers={n_layers}, got p_stochastic={p_stochastic}."
             raise ValueError(msg)
@@ -599,7 +587,7 @@ class MaxVit(nnx.Module):
         # norm_layer is applied only to the conv layers
         # activation_layer is applied both to conv and transformer layers
         norm_layer: Callable[..., nnx.Module] | None = None,
-        activation_layer: Callable[..., nnx.Module] = GELU,
+        activation_layer: Callable[..., nnx.Module] = nnx.gelu,
         # conv parameters
         squeeze_ratio: float = 0.25,
         expansion_ratio: float = 4,
@@ -612,8 +600,6 @@ class MaxVit(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
-
         input_channels = 3
 
         if norm_layer is None:

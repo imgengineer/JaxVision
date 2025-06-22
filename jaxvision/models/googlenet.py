@@ -35,7 +35,6 @@ class GoogLeNet(nnx.Module):
         rngs: nnx.Rngs,
         deterministic: bool = False,
     ):
-        super().__init__()
         if blocks is None:
             blocks = [BasicConv2d, Inception, InceptionAux]
         if init_weights is None:
@@ -164,7 +163,6 @@ class Inception(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
 
@@ -208,7 +206,6 @@ class InceptionAux(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         if conv_block is None:
             conv_block = BasicConv2d
 
@@ -229,7 +226,6 @@ class InceptionAux(nnx.Module):
 
 class BasicConv2d(nnx.Module):
     def __init__(self, in_channels: int, out_channels: int, *, rngs: nnx.Rngs, **kwargs):
-        super().__init__()
         self.conv = nnx.Conv(in_channels, out_channels, use_bias=False, rngs=rngs, **kwargs)
         self.bn = nnx.BatchNorm(out_channels, epsilon=0.001, rngs=rngs)
 

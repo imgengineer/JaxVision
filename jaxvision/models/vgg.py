@@ -5,8 +5,6 @@ import jax
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import ReLU
-
 __all__ = [
     "VGG",
     "vgg11",
@@ -30,14 +28,13 @@ class VGG(nnx.Module):
         init_weights: bool = True,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         self.features = features
         self.classifier = nnx.Sequential(
             nnx.Linear(512 * 7 * 7, 4096, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(4096, 4096, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(4096, num_classes, rngs=rngs),
         )
@@ -77,9 +74,9 @@ def make_layers(
             v = cast("int", v)
             conv2d = nnx.Conv(in_channels, v, kernel_size=(3, 3), padding="SAME", rngs=rngs)
             if batch_norm:
-                layers += [conv2d, nnx.BatchNorm(v, rngs=rngs), ReLU()]
+                layers += [conv2d, nnx.BatchNorm(v, rngs=rngs), nnx.relu]
             else:
-                layers += [conv2d, ReLU()]
+                layers += [conv2d, nnx.relu]
             in_channels = v
     return nnx.Sequential(*layers)
 

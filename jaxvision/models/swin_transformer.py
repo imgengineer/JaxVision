@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import GELU, MLP, ReLU
+from ..ops.misc import MLP
 from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -66,7 +66,6 @@ class PatchMerging(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         self.dim = dim
         self.reduction = nnx.Linear(4 * dim, 2 * dim, use_bias=False, rngs=rngs)
         self.norm = norm_layer(4 * dim, rngs=rngs)
@@ -94,7 +93,6 @@ class PatchMergingV2(nnx.Module):
     """
 
     def __init__(self, dim: int, norm_layer: Callable[..., nnx.Module] = nnx.LayerNorm, *, rngs: nnx.Rngs):
-        super().__init__()
         self.dim = dim
         self.reduction = nnx.Linear(4 * dim, 2 * dim, use_bias=False, rngs=rngs)
         self.norm = norm_layer(2 * dim, rngs=rngs)  # difference
@@ -258,7 +256,6 @@ class ShiftedWindowAttention(nnx.Module):
         deterministic: bool = False,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         if len(window_size) != 2 or len(shift_size) != 2:  # noqa: PLR2004
             msg = "window_size and shift_size must be of length 2"
             raise ValueError(msg)
@@ -273,29 +270,16 @@ class ShiftedWindowAttention(nnx.Module):
         self.qkv = nnx.Linear(dim, dim * 3, use_bias=qkv_bias, rngs=rngs)
         self.proj = nnx.Linear(dim, dim, use_bias=proj_bias, rngs=rngs)
 
-        self.define_relative_position_bias_table()
-        self.define_relative_position_index()
-
-    def define_relative_position_bias_table(self):
-        # define a parameter table of relative position bias
-        self.relative_position_bias_table = nnx.Param(
-            nnx.initializers.zeros(
-                self.rngs.params(),
-                shape=((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
-            ),
-        )
-        # 2*Wh-1 * 2*Ww-1, nH
-        # nn.init.trunc_normal_(self.relative_position_bias_table, std=0.02)
-        self.relative_position_bias_table.value = (
+        self.realtive_position_bias_table = nnx.Param(
             jax.random.truncated_normal(
-                self.rngs.params(),
-                -2,
-                2,
-                shape=self.relative_position_bias_table.value.shape,
-                dtype=jnp.float32,
+                key=rngs.params(),
+                lowwer=-2,
+                upper=2,
+                shape=((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
             )
-            * 0.02
+            * 0.02,
         )
+        self.define_relative_position_index()
 
     def define_relative_position_index(self):
         # get pair-wise relative position index for each token inside the window
@@ -378,7 +362,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         # mlp to generate continuous relative position bias
         self.cpb_mlp = nnx.Sequential(
             nnx.Linear(2, 512, use_bias=True, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             nnx.Linear(512, num_heads, use_bias=False, rngs=rngs),
         )
         if qkv_bias:
@@ -435,7 +419,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             dropout=self.dropout,
             qkv_bias=self.qkv.bias,
             proj_bias=self.proj.bias,
-            logit_scale=self.logit_scale,
+            logit_scale=self.logit_scale.value,
             deterministic=self.deterministic,
             rngs=self.rngs,
         )
@@ -473,8 +457,6 @@ class SwinTransformerBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
-
         self.norm1 = norm_layer(dim, rngs=rngs)
         self.attn = attn_layer(
             dim,
@@ -487,7 +469,7 @@ class SwinTransformerBlock(nnx.Module):
         )
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row", rngs=rngs)
         self.norm2 = norm_layer(dim, rngs=rngs)
-        self.mlp = MLP(dim, [int(dim * mlp_ratio), dim], activation_layer=GELU, dropout=dropout, rngs=rngs)
+        self.mlp = MLP(dim, [int(dim * mlp_ratio), dim], activation_layer=nnx.gelu, dropout=dropout, rngs=rngs)
 
         for m in self.mlp.iter_modules():
             if isinstance(m, nnx.Linear):
@@ -546,7 +528,7 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
             rngs=rngs,
         )
 
-    def forward(self, x: Array):
+    def __call__(self, x: Array):
         # Here is the difference, we apply norm after the attention in V2.
         # In V1 we applied norm before the attention.
         x = x + self.stochastic_depth(self.norm1(self.attn(x)))
@@ -592,7 +574,6 @@ class SwinTransformer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        super().__init__()
         self.num_classes = num_classes
 
         if block is None:

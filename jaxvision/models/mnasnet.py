@@ -3,8 +3,6 @@ from typing import Any
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import ReLU
-
 __all__ = [
     "MNASNet",
     "mnasnet0_5",
@@ -30,7 +28,6 @@ class _InvertedResidual(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if stride not in [1, 2]:
             msg = f"stride should be 1 or 2 instead of {stride}"
             raise ValueError(msg)
@@ -43,7 +40,7 @@ class _InvertedResidual(nnx.Module):
             # Pointwise
             nnx.Conv(in_ch, mid_ch, kernel_size=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(mid_ch, momentum=bn_momentum, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             # Depthwise
             nnx.Conv(
                 mid_ch,
@@ -56,7 +53,7 @@ class _InvertedResidual(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(mid_ch, momentum=bn_momentum, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             # Linear pointwise. Note that there's no activation.
             nnx.Conv(mid_ch, out_ch, kernel_size=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(out_ch, momentum=bn_momentum, rngs=rngs),
@@ -136,7 +133,6 @@ class MNASNet(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         if alpha <= 0.0:
             msg = f"alpha should be greater than 0.0 instead of {alpha}"
             raise ValueError(msg)
@@ -147,7 +143,7 @@ class MNASNet(nnx.Module):
             # First layer: regular conv.
             nnx.Conv(3, depths[0], kernel_size=(3, 3), padding="SAME", strides=(2, 2), use_bias=False, rngs=rngs),
             nnx.BatchNorm(depths[0], momentum=_BN_MOMENTUM, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             # Depthwise separable, no skip.
             nnx.Conv(
                 depths[0],
@@ -160,7 +156,7 @@ class MNASNet(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(depths[0], momentum=_BN_MOMENTUM, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             nnx.Conv(
                 depths[0],
                 depths[1],
@@ -181,7 +177,7 @@ class MNASNet(nnx.Module):
             # Final mapping to classifier input.
             nnx.Conv(depths[7], 1280, kernel_size=(1, 1), padding="SAME", strides=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(1280, momentum=_BN_MOMENTUM, rngs=rngs),
-            ReLU(),
+            nnx.relu,
         ]
         self.layers = nnx.Sequential(*layers)
         self.classifier = nnx.Sequential(nnx.Dropout(rate=dropout, rngs=rngs), nnx.Linear(1280, num_classes, rngs=rngs))

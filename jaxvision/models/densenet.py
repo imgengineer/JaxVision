@@ -5,8 +5,6 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import ReLU
-
 __all__ = [
     "DenseNet",
     "densenet121",
@@ -26,7 +24,6 @@ class _DenseLayer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         self.norm1 = nnx.BatchNorm(num_input_features, rngs=rngs)
         self.conv1 = nnx.Conv(
             num_input_features,
@@ -81,7 +78,6 @@ class _DenseBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         layers = [
             _DenseLayer(
                 num_input_features + i * growth_rate,
@@ -106,7 +102,7 @@ class _Transition(nnx.Sequential):
     def __init__(self, num_input_features: int, num_output_features: int, *, rngs: nnx.Rngs) -> None:
         layers = [
             nnx.BatchNorm(num_input_features, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             nnx.Conv(
                 num_input_features,
                 num_output_features,
@@ -146,7 +142,6 @@ class DenseNet(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
 
         features = [
             nnx.Conv(
@@ -159,7 +154,7 @@ class DenseNet(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(num_init_features, rngs=rngs),
-            ReLU(),
+            nnx.relu,
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"),
         ]
 

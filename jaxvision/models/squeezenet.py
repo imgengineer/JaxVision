@@ -4,8 +4,6 @@ import jax.numpy as jnp
 from flax import nnx
 from jax import Array
 
-from ..ops.misc import ReLU
-
 __all__ = ["SqueezeNet", "squeezenet1_0", "squeezenet1_1"]
 
 
@@ -19,7 +17,6 @@ class Fire(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        super().__init__()
         self.inplanes = inplanes
         self.squeeze = nnx.Conv(inplanes, squeeze_planes, kernel_size=(1, 1), rngs=rngs)
         self.expand1x1 = nnx.Conv(squeeze_planes, expand1x1_planes, kernel_size=(1, 1), rngs=rngs)
@@ -35,12 +32,11 @@ class Fire(nnx.Module):
 
 class SqueezeNet(nnx.Module):
     def __init__(self, version: str = "1_0", num_classes: int = 1000, dropout: float = 0.5, *, rngs: nnx.Rngs) -> None:
-        super().__init__()
         self.num_classes = num_classes
         if version == "1_0":
             self.features = nnx.Sequential(
                 nnx.Conv(3, 96, kernel_size=(7, 7), strides=(2, 2), rngs=rngs),
-                ReLU(),
+                nnx.relu,
                 partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2)),
                 Fire(96, 16, 64, 64, rngs=rngs),
                 Fire(128, 16, 64, 64, rngs=rngs),
@@ -57,7 +53,7 @@ class SqueezeNet(nnx.Module):
         elif version == "1_1":
             self.features = nnx.Sequential(
                 nnx.Conv(3, 64, kernel_size=(3, 3), strides=(2, 2), rngs=rngs),
-                ReLU(),
+                nnx.relu,
                 partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2)),
                 Fire(64, 16, 64, 64, rngs=rngs),
                 Fire(128, 16, 64, 64, rngs=rngs),
@@ -78,7 +74,7 @@ class SqueezeNet(nnx.Module):
         self.classifier = nnx.Sequential(
             nnx.Dropout(rate=dropout, rngs=rngs),
             final_conv,
-            ReLU(),
+            nnx.relu,
         )
 
         for _, m in self.iter_modules():
