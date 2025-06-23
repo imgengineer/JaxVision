@@ -43,3 +43,20 @@ class ImageFolderDataSource:
 
     def __getitem__(self, index: int) -> tuple[str, int]:  # noqa: D105
         return self.samples[index]
+
+def create_datasets(params):
+    """Create training and validation datasets."""
+    train_dataset = ImageFolderDataSource(params["train_data_path"])
+
+    val_dataset = ImageFolderDataSource(params["val_data_path"])
+
+    return train_dataset, val_dataset
+
+
+def print_dataset_info(train_dataset, val_dataset):
+    """Print dataset information."""
+    print("📊 Dataset Info:")
+    print(f"  Train samples: {len(train_dataset)}")
+    print(f"  Validation samples: {len(val_dataset)}")
+    print(f"  Classes: {train_dataset.classes}")
+    print(f"  Number of classes: {len(train_dataset.classes)}")

@@ -15,8 +15,6 @@ __all__ = [
     "mobilenet_v3_large",
     "mobilenet_v3_small",
 ]
-
-
 class InvertedResidualConfig:
     # Stores information listed at Table 1 and 2 of the MobileNetV3 paper
     def __init__(  # noqa: PLR0913

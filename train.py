@@ -1,23 +1,28 @@
 import os
 
+os.environ["XLA_FLAGS"] = (
+    # https://github.com/NVIDIA/JAX-Toolbox/blob/main/rosetta/docs/GPU_performance.md
+    # https://docs.jax.dev/en/latest/gpu_performance_tips.html#xla-performance-flags
+    # Use Triton-based matrix multiplication.
+    "--xla_gpu_triton_gemm_any=True "
+    # To enable latency hiding optimizations with XLA, turn on the following flag
+    "--xla_gpu_enable_latency_hiding_scheduler=true "
+)
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 import csv
-import random
 from pathlib import Path
 
 import albumentations as A  # noqa: N812
-import cv2
-import grain
-import jax.numpy as jnp
-import numpy as np
+import grain.python as grain
 import optax
 import orbax.checkpoint as ocp
 from flax import nnx
 from tqdm import tqdm
 
-from dataset import ImageFolderDataSource
+from dataset import create_datasets
 from jaxvision.models.resnet import resnet18
-from jaxvision.transforms import AlbumentationsTransform, LoadImageMap
+from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap
+from jaxvision.utils import create_model, print_dataset_info, save_model, set_seed
 
 # Configuration
 params = {
@@ -35,12 +40,6 @@ params = {
 }
 
 
-def set_seed(seed):
-    """Set random seeds for reproducibility."""
-    np.random.default_rng(seed)
-    random.seed(seed)
-
-
 def create_transforms(target_size, *, is_training=True) -> A.Compose:
     transforms_list = [
         A.Resize(height=target_size, width=target_size, p=1.0),
@@ -51,12 +50,12 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
             [
                 A.HorizontalFlip(p=0.5),
                 A.VerticalFlip(p=0.5),
-                A.Rotate(limit=30, p=0.5, border_mode=cv2.BORDER_REFLECT_101),  # 使用 cv2.BORDER_REFLECT_101 填充边缘
+                A.Rotate(limit=30, p=0.5),
                 A.ColorJitter(
                     brightness=0.2,
                     contrast=0.2,
                     saturation=0.2,
-                    hue=0.05,  # 减小 hue 的变化范围
+                    hue=0.05,
                     p=0.5,
                 ),
                 A.RandomResizedCrop(
@@ -70,8 +69,8 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
 
     transforms_list.append(
         A.Normalize(
-            mean=[0.485, 0.456, 0.406],  # ImageNet 均值
-            std=[0.229, 0.224, 0.225],  # ImageNet 标准差
+            mean=[0.485, 0.456, 0.406],  # ImageNet Mean
+            std=[0.229, 0.224, 0.225],  # ImageNet Std
             max_pixel_value=255.0,
         ),
     )
@@ -79,54 +78,62 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
     return A.Compose(transforms_list)
 
 
-def create_datasets(params):
-    """Create training and validation datasets."""
-    train_dataset = ImageFolderDataSource(params["train_data_path"])
-
-    val_dataset = ImageFolderDataSource(params["val_data_path"])
-
-    return train_dataset, val_dataset
-
-
 def create_dataloaders(train_dataset, val_dataset, params):
     """Create data loaders."""
-
-    def create_batch_fn(batch):
-        images, labels = zip(*batch, strict=True)
-        return np.stack(images, axis=0), np.stack(labels, axis=0)
-
-    train_loader = (
-        grain.MapDataset.source(train_dataset)
-        .shuffle(seed=params["seed"])
-        .map(LoadImageMap())
-        .map(AlbumentationsTransform(create_transforms(params["target_size"], is_training=True)))
-        .to_iter_dataset()
-        .batch(
-            batch_size=params["batch_size"],
-            drop_remainder=True,
-            batch_fn=create_batch_fn,
-        )
-        .mp_prefetch(options=grain.multiprocessing.MultiprocessingOptions(num_workers=params["num_workers"]))
+    # Create an `grain.IndexSampler` with no sharding for single-device computations.
+    train_sampler = grain.IndexSampler(
+        len(train_dataset),  # # The total number of samples in the data source.
+        shuffle=True,  # # Shuffle the data to randomize the order.of samples
+        seed=params["seed"],  # # Set a seed for reproducibility.
+        shard_options=grain.NoSharding(),  # # No sharding since this is a single-device setup
+        num_epochs=1,  # # Iterate over the dataset for one epoch.
     )
-    val_loader = (
-        grain.MapDataset.source(val_dataset)
-        .map(LoadImageMap())
-        .map(AlbumentationsTransform(create_transforms(params["target_size"], is_training=False)))
-        .to_iter_dataset()
-        .batch(
-            batch_size=params["batch_size"],
-            drop_remainder=False,
-            batch_fn=create_batch_fn,
-        )
-        .mp_prefetch(options=grain.multiprocessing.MultiprocessingOptions(num_workers=params["num_workers"]))
+    val_sampler = grain.IndexSampler(
+        len(val_dataset),
+        shuffle=False,
+        seed=params["seed"],
+        shard_options=grain.NoSharding(),  # # No sharding since this is a single-device setup
+        num_epochs=1,
+    )
+    train_loader = grain.DataLoader(
+        data_source=train_dataset,
+        sampler=train_sampler,  # A sampler to determine how to access the data.
+        worker_count=params[
+            "num_workers"
+        ],  # Number of child processes launched to parallelize the transformations among.
+        worker_buffer_size=2,  # Count of output batches to produce in advance per worker.
+        operations=[
+            OpenCVLoadImageMap(),
+            AlbumentationsTransform(
+                create_transforms(
+                    target_size=params["target_size"],
+                    is_training=False,
+                ),
+            ),
+            grain.Batch(
+                params["batch_size"],
+                drop_remainder=True,
+            ),
+        ],
+    )
+    val_loader = grain.DataLoader(
+        data_source=val_dataset,
+        sampler=val_sampler,
+        worker_count=params["num_workers"],
+        worker_buffer_size=2,
+        operations=[
+            OpenCVLoadImageMap(),
+            AlbumentationsTransform(
+                create_transforms(
+                    target_size=params["target_size"],
+                    is_training=False,
+                ),
+            ),
+            grain.Batch(params["batch_size"]),
+        ],
     )
 
     return train_loader, val_loader
-
-
-def create_model(seed, num_classes):
-    """Create a new model."""
-    return resnet18(rngs=nnx.Rngs(seed), num_classes=num_classes)
 
 
 def create_optimizer(model, learining_rate: float, weight_decay: float):
@@ -140,27 +147,6 @@ def create_optimizer(model, learining_rate: float, weight_decay: float):
     )
 
 
-def save_model(model, path_str: str):
-    """Save model state."""
-    model_path = Path(path_str)
-    model_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
-    checkpointer = ocp.PyTreeCheckpointer()
-    state = nnx.state(model)
-    checkpointer.save(model_path, state)
-
-
-def load_model(path, num_classes):
-    """Load model from checkpoint."""
-    model = nnx.eval_shape(lambda: create_model(0, num_classes))
-    state = nnx.state(model)
-
-    checkpointer = ocp.PyTreeCheckpointer()
-    state = checkpointer.restore(path, item=state)
-
-    nnx.update(model, state)
-    return model
-
-
 def loss_fn(model, batch):
     """Calculate loss and logits."""
     images, labels = batch
@@ -172,30 +158,17 @@ def loss_fn(model, batch):
 @nnx.jit
 def train_step(model, optimizer, metrics, batch):
     """Single training step."""
-    # Convert numpy arrays to jnp.array on GPU
-    x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
     grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(model, (x, y_true))
-    metrics.update(loss=loss, logits=logits, labels=y_true)
+    (loss, logits), grads = grad_fn(model, batch)
+    metrics.update(loss=loss, logits=logits, labels=batch[1])
     optimizer.update(grads)
 
 
 @nnx.jit
 def eval_step(model, metrics, batch):
     """Single evaluation step."""
-    # convert numpy arrays to jnp.array on GPU
-    x, y_true = jnp.asarray(batch[0]), jnp.asarray(batch[1])
-    loss, logits = loss_fn(model, (x, y_true))
-    metrics.update(loss=loss, logits=logits, labels=y_true)
-
-
-def print_dataset_info(train_dataset, val_dataset):
-    """Print dataset information."""
-    print("📊 Dataset Info:")
-    print(f"  Train samples: {len(train_dataset)}")
-    print(f"  Validation samples: {len(val_dataset)}")
-    print(f"  Classes: {train_dataset.classes}")
-    print(f"  Number of classes: {len(train_dataset.classes)}")
+    loss, logits = loss_fn(model, batch)
+    metrics.update(loss=loss, logits=logits, labels=batch[1])
 
 
 def main():
@@ -214,7 +187,7 @@ def main():
 
     # Create model and optimizer
     print("\n🏗️ Creating model and optimizer...")
-    model = create_model(params["seed"], params["num_classes"])
+    model = create_model(resnet18, params["seed"], params["num_classes"])
 
     optimizer = create_optimizer(
         model,
@@ -250,7 +223,7 @@ def main():
         print(f"Epoch {epoch + 1}/{params['num_epochs']}")
         print(f"{'=' * 60}")
 
-        # Train and validate
+        # Train
         model.train()
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
             cached_train_step(batch)
@@ -258,6 +231,7 @@ def main():
         train_metrics.reset()
         print(f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%")
 
+        # Validate
         model.eval()
         for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
             cached_eval_step(batch)
@@ -272,7 +246,7 @@ def main():
             checkpoint_path = params["checkpoint_dir"] / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
             save_model(model, checkpoint_path)
             print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
-        with Path.open(csv_path, mode="a", newline="") as f:
+        with csv_path.open(mode="a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(
                 [
