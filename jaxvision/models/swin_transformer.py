@@ -270,14 +270,11 @@ class ShiftedWindowAttention(nnx.Module):
         self.qkv = nnx.Linear(dim, dim * 3, use_bias=qkv_bias, rngs=rngs)
         self.proj = nnx.Linear(dim, dim, use_bias=proj_bias, rngs=rngs)
 
-        self.realtive_position_bias_table = nnx.Param(
-            jax.random.truncated_normal(
-                key=rngs.params(),
-                lowwer=-2,
-                upper=2,
-                shape=((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
-            )
-            * 0.02,
+        self.relative_position_bias_table = nnx.Param(
+            nnx.initializers.truncated_normal(stddev=0.02, lower=-2, upper=2)(
+                rngs.params(),
+                ((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
+            ),
         )
         self.define_relative_position_index()
 

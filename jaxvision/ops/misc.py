@@ -47,7 +47,7 @@ class MLP(nnx.Sequential):
         *,
         bias: bool = False,
         rngs: nnx.Rngs,
-    ):
+    ) -> nnx.Sequential:
         layers = []
         in_dim = in_channels
         for hidden_dim in hidden_channels[:-1]:
@@ -114,7 +114,7 @@ class Conv2dNormActivation(nnx.Sequential):
         *,
         bias: bool | None = None,
         rngs: nnx.Rngs,
-    ) -> None:
+    ) -> nnx.Sequential:
         if padding is None:
             padding = "SAME"
         if bias is None:

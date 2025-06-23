@@ -175,7 +175,7 @@ class RelativePositionMultiHeadAttention(nnx.Module):
 
         self.merge = nnx.Linear(self.head_dim * self.n_heads, feat_dim, rngs=rngs)
         self.relative_position_bias_table = nnx.Param(
-            jnp.zeros(shape=((2 * self.size - 1) * (2 * self.size - 1), self.n_heads)),
+            nnx.initializers.zeros_init()(rngs.params(), ((2 * self.size - 1) * (2 * self.size - 1), self.n_heads)),
         )
         self.relative_position_index = _get_relative_position_index(self.size, self.size)
 

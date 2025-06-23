@@ -106,7 +106,7 @@ class Encoder(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        self.pos_embedding = nnx.Param(jax.random.normal(rngs.params(), shape=(1, seq_length, hidden_dim)))
+        self.pos_embedding = nnx.Param(nnx.initializers.normal(stddev=0.02)(rngs.params(), (1, seq_length, hidden_dim)))
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
         layers: list[nnx.Module] = []
         layers = [
@@ -193,7 +193,7 @@ class VisionTransformer(nnx.Module):
         seq_length = (image_size // patch_size) ** 2
 
         # Add a class token
-        self.class_token = nnx.Param(jnp.zeros(shape=(1, 1, hidden_dim)))
+        self.class_token = nnx.Param(nnx.initializers.zeros_init()(rngs.params(), (1, 1, hidden_dim)))
         seq_length += 1
 
         self.encoder = Encoder(
