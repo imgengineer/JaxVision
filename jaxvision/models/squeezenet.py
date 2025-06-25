@@ -1,8 +1,8 @@
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 __all__ = ["SqueezeNet", "squeezenet1_0", "squeezenet1_1"]
 
@@ -22,7 +22,7 @@ class Fire(nnx.Module):
         self.expand1x1 = nnx.Conv(squeeze_planes, expand1x1_planes, kernel_size=(1, 1), rngs=rngs)
         self.expand3x3 = nnx.Conv(squeeze_planes, expand3x3_planes, kernel_size=(3, 3), padding="SAME", rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = nnx.relu(self.squeeze(x))
         return jnp.concat(
             [nnx.relu(self.expand1x1(x)), nnx.relu(self.expand3x3(x))],
@@ -86,7 +86,7 @@ class SqueezeNet(nnx.Module):
                 if m.bias is not None:
                     m.bias_init = nnx.initializers.constant(0)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         x = self.classifier(x)
         return x.mean(axis=(1, 2))

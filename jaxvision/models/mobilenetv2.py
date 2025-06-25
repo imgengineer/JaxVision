@@ -1,7 +1,7 @@
 from collections.abc import Callable
 
+import jax
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import Conv2dNormActivation
 from ._utils import _make_divisible
@@ -73,7 +73,7 @@ class InvertedResidual(nnx.Module):
         self.out_channels = oup
         self._is_cn = stride > 1
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         if self.use_res_connect:
             return x + self.conv(x)
         return self.conv(x)
@@ -197,7 +197,7 @@ class MobileNetV2(nnx.Module):
                 m.kernel_init = nnx.initializers.normal(stddev=0.01)
                 m.bias_init = nnx.initializers.zeros_init()
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         x = x.mean(axis=(1, 2))
         return self.classifier(x)

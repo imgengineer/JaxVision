@@ -3,7 +3,6 @@ from typing import Any, cast
 
 import jax
 from flax import nnx
-from jax import Array
 
 __all__ = [
     "VGG",
@@ -51,7 +50,7 @@ class VGG(nnx.Module):
                         m.kernel_init = nnx.initializers.normal(stddev=0.01)
                         m.bias_init = nnx.initializers.constant(0)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         batch_size, _, _, channels = x.shape
         x = jax.image.resize(x, (batch_size, 7, 7, channels), method=jax.image.ResizeMethod.LINEAR)

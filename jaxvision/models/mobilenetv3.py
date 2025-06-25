@@ -2,9 +2,9 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import Conv2dNormActivation
 from ..ops.misc import SqueezeExtraction as SElayer
@@ -15,6 +15,8 @@ __all__ = [
     "mobilenet_v3_large",
     "mobilenet_v3_small",
 ]
+
+
 class InvertedResidualConfig:
     # Stores information listed at Table 1 and 2 of the MobileNetV3 paper
     def __init__(  # noqa: PLR0913
@@ -109,7 +111,7 @@ class InvertResidual(nnx.Module):
         self.out_channels = cnf.out_channels
         self._is_cn = cnf.stride > 1
 
-    def __call__(self, input: Array) -> Array:  # noqa: A002
+    def __call__(self, input: jax.Array) -> jax.Array:  # noqa: A002
         result = self.block(input)
         if self.use_res_connect:
             result += input
@@ -196,7 +198,7 @@ class MobileNetV3(nnx.Module):
             nnx.Linear(last_channel, num_classes, rngs=rngs),
         )
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         x = jnp.mean(x, axis=(1, 2))
         return self.classifier(x)

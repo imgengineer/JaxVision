@@ -2,7 +2,6 @@ from functools import partial
 
 import jax
 from flax import nnx
-from jax import Array
 
 __all__ = ["AlexNet", "alexnet"]
 
@@ -40,7 +39,7 @@ class AlexNet(nnx.Module):
             nnx.Linear(4096, num_classes, rngs=rngs),
         )
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         batch_size, _, _, channels = x.shape
         x = jax.image.resize(x, (batch_size, 6, 6, channels), method=jax.image.ResizeMethod.LINEAR)

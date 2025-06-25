@@ -5,7 +5,6 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import MLP
 from ..ops.stochastic_depth import StochasticDepth
@@ -21,7 +20,7 @@ __all__ = [
 ]
 
 
-def _patch_merging_pad(x: Array) -> Array:
+def _patch_merging_pad(x: jax.Array) -> jax.Array:
     H, W, _ = x.shape[1:]  # noqa: N806
     x = jnp.pad(
         x,
@@ -40,10 +39,10 @@ def _patch_merging_pad(x: Array) -> Array:
 
 
 def _get_relative_position_bias(
-    relative_position_bias_table: Array,
-    relative_position_index: Array,
+    relative_position_bias_table: jax.Array,
+    relative_position_index: jax.Array,
     window_size: list[int],
-) -> Array:
+) -> jax.Array:
     N = window_size[0] * window_size[1]  # noqa: N806
     relative_position_bias = relative_position_bias_table[relative_position_index]  # type: ignore[index]
     relative_position_bias = relative_position_bias.reshape(N, N, -1)
@@ -70,12 +69,12 @@ class PatchMerging(nnx.Module):
         self.reduction = nnx.Linear(4 * dim, 2 * dim, use_bias=False, rngs=rngs)
         self.norm = norm_layer(4 * dim, rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
-            x (Array): input tensor with expected layout of [..., H, W, C].
+            x (jax.Array): input tensor with expected layout of [..., H, W, C].
 
         Returns:
-            Array with layout of [..., H/2, W/2, 2*C]
+            jax.Array with layout of [..., H/2, W/2, 2*C]
 
         """
         x = _patch_merging_pad(x)
@@ -97,12 +96,12 @@ class PatchMergingV2(nnx.Module):
         self.reduction = nnx.Linear(4 * dim, 2 * dim, use_bias=False, rngs=rngs)
         self.norm = norm_layer(2 * dim, rngs=rngs)  # difference
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
-            x (Array): input tensor with expected layout of [..., H, W, C].
+            x (jax.Array): input tensor with expected layout of [..., H, W, C].
 
         Returns:
-            Array with layout of [..., H/2, W/2, 2*C]
+            jax.Array with layout of [..., H/2, W/2, 2*C]
 
         """
         x = _patch_merging_pad(x)
@@ -111,30 +110,30 @@ class PatchMergingV2(nnx.Module):
 
 
 def shifted_window_attention(  # noqa: PLR0913, PLR0915
-    inputs: Array,
-    qkv_weight: Array,
-    proj_weight: Array,
-    relative_position_bias: Array,
+    inputs: jax.Array,
+    qkv_weight: jax.Array,
+    proj_weight: jax.Array,
+    relative_position_bias: jax.Array,
     window_size: list[int],
     num_heads: int,
     shift_size: list[int],
     attention_dropout: float = 0.0,
     dropout: float = 0.0,
-    qkv_bias: Array | None = None,
-    proj_bias: Array | None = None,
-    logit_scale: Array | None = None,
+    qkv_bias: jax.Array | None = None,
+    proj_bias: jax.Array | None = None,
+    logit_scale: jax.Array | None = None,
     *,
     deterministic: bool = False,
     rngs: nnx.Rngs,
-) -> Array:
+) -> jax.Array:
     """Window based multi-head self attention (W-MSA) module with relative position bias.
     It supports both of shifted and non-shifted window.
 
     Args:
-        input (Array[N, H, W, C]): The input tensor or 4-dimensions.
-        qkv_weight (Array[in_dim, out_dim]): The weight tensor of query, key, value.
-        proj_weight (Array[out_dim, out_dim]): The weight tensor of projection.
-        relative_position_bias (Array): The learned relative position bias added to attention.
+        input (jax.Array[N, H, W, C]): The input tensor or 4-dimensions.
+        qkv_weight (jax.Array[in_dim, out_dim]): The weight tensor of query, key, value.
+        proj_weight (jax.Array[out_dim, out_dim]): The weight tensor of projection.
+        relative_position_bias (jax.Array): The learned relative position bias added to attention.
         window_size (list[int]): Window size.
         num_heads (int): Number of attention heads.
         shift_size (list[int]): Shift size for shifted window attention.
@@ -146,7 +145,7 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
         training (bool, optional): Training flag used by the dropout parameters. Default: True.
 
     Returns:
-        Array[N, H, W, C]: The output tensor after shifted window attention.
+        jax.Array[N, H, W, C]: The output tensor after shifted window attention.
 
     """
     B, H, W, C = inputs.shape  # noqa: N806
@@ -292,14 +291,14 @@ class ShiftedWindowAttention(nnx.Module):
         relative_position_index = relative_coords.sum(axis=-1).flatten()  # Wh*Ww*Wh*Ww
         self.relative_position_index = relative_position_index
 
-    def get_relative_position_bias(self) -> Array:
+    def get_relative_position_bias(self) -> jax.Array:
         return _get_relative_position_bias(
             self.relative_position_bias_table.value,
             self.relative_position_index,
             self.window_size,  # type: ignore[arg-type]
         )
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
             x (Tensor): Tensor with layout of [B, H, W, C].
 
@@ -387,7 +386,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         relative_coords_table = jnp.sign(relative_coords_table) * jnp.log2(jnp.abs(relative_coords_table) + 1.0) / 3.0
         self.relative_coords_table = relative_coords_table
 
-    def get_relative_position_bias(self) -> Array:
+    def get_relative_position_bias(self) -> jax.Array:
         relative_position_bias = _get_relative_position_bias(
             self.cpb_mlp(self.relative_coords_table).reshape(-1, self.num_heads),
             self.relative_position_index,  # type: ignore[arg-type]
@@ -395,7 +394,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         )
         return 16 * nnx.sigmoid(relative_position_bias)
 
-    def __call__(self, x: Array):
+    def __call__(self, x: jax.Array):
         """Args:
             x (Tensor): Tensor with layout of [B, H, W, C].
 
@@ -474,7 +473,7 @@ class SwinTransformerBlock(nnx.Module):
                 if m.bias is not None:
                     m.bias_init = nnx.initializers.normal(stddev=1e-6)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = x + self.stochastic_depth(self.attn(self.norm1(x)))
         return x + self.stochastic_depth(self.mlp(self.norm2(x)))
 
@@ -525,7 +524,7 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
             rngs=rngs,
         )
 
-    def __call__(self, x: Array):
+    def __call__(self, x: jax.Array):
         # Here is the difference, we apply norm after the attention in V2.
         # In V1 we applied norm before the attention.
         x = x + self.stochastic_depth(self.norm1(self.attn(x)))

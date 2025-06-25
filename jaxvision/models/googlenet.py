@@ -6,16 +6,15 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 from jax.image import ResizeMethod
 
 __all__ = ["GoogLeNet", "GoogLeNetOutputs", "_GoogLeNetOutputs", "googlenet"]
 
 
 class GoogLeNetOutputs(NamedTuple):
-    logits: Array
-    aux_logits2: Array | None
-    aux_logits1: Array | None
+    logits: jax.Array
+    aux_logits2: jax.Array | None
+    aux_logits1: jax.Array | None
 
 
 _GoogLeNetOutputs = GoogLeNetOutputs
@@ -97,14 +96,14 @@ class GoogLeNet(nnx.Module):
                     m.scale_init = nnx.initializers.ones_init()
                     m.bias_init = nnx.initializers.constant(0)
 
-    def _transform_input(self, x: Array) -> Array:
+    def _transform_input(self, x: jax.Array) -> jax.Array:
         if self.transform_input:
             mean = jnp.array([0.485, 0.456, 0.406])
             std = jnp.array([0.229, 0.224, 0.225])
             x = (x - mean) / std
         return x
 
-    def __call__(self, x: Array):
+    def __call__(self, x: jax.Array):
         x = self._transform_input(x)
         x = self.conv1(x)
         x = self.maxpool1(x)
@@ -187,7 +186,7 @@ class Inception(nnx.Module):
             conv_block(in_channels, pool_proj, kernel_size=(1, 1), rngs=rngs),
         )
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         branch1 = self.branch1(x)
         branch2 = self.branch2(x)
         branch3 = self.branch3(x)
@@ -214,7 +213,7 @@ class InceptionAux(nnx.Module):
         self.fc2 = nnx.Linear(1024, num_classes, rngs=rngs)
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         # Adaptive average pooling to 4x4
         x = jax.image.resize(x, shape=(x.shape[0], 4, 4, x.shape[-1]), method=ResizeMethod.LINEAR)
         x = self.conv(x)
@@ -229,7 +228,7 @@ class BasicConv2d(nnx.Module):
         self.conv = nnx.Conv(in_channels, out_channels, use_bias=False, rngs=rngs, **kwargs)
         self.bn = nnx.BatchNorm(out_channels, epsilon=0.001, rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.conv(x)
         x = self.bn(x)
         return nnx.relu(x)

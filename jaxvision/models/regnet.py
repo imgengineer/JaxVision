@@ -3,9 +3,9 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import Conv2dNormActivation, SqueezeExtraction
 from ._utils import _make_divisible
@@ -167,7 +167,7 @@ class ResBottlenectBlock(nnx.Module):
         )
         self.activation = activation_layer
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.proj(x) + self.f(x) if self.proj is not None else x + self.f(x)
         return self.activation(x)
 
@@ -279,7 +279,7 @@ class BlockParams:
         splits = [w != wp or r != rp for w, wp, r, rp in split_helper]
 
         stage_widths = [w for w, t in zip(block_widths, splits[:-1], strict=False) if t]
-        stage_depths = jnp.diff(jnp.array([d for d, t in enumerate(splits) if t])).astype(jnp.int32).tolist()
+        stage_depths = jnp.diff(jnp.jax.Array([d for d, t in enumerate(splits) if t])).astype(jnp.int32).tolist()
 
         strides = [STRIDE] * num_stages
         bottleneck_multipliers = [bottleneck_multiplier] * num_stages
@@ -404,7 +404,7 @@ class RegNet(nnx.Module):
                 m.kernel_init = nnx.initializers.normal(stddev=0.01)
                 m.bias_init = nnx.initializers.zeros_init()
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.stem(x)
         x = self.trunk_output(x)
 

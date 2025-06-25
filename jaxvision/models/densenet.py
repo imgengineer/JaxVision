@@ -1,9 +1,9 @@
 from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 __all__ = [
     "DenseNet",
@@ -49,12 +49,12 @@ class _DenseLayer(nnx.Module):
         self.drop_rate = float(drop_rate)
         self.dropout = nnx.Dropout(rate=self.drop_rate, rngs=rngs)
 
-    def bn_function(self, inputs: list[Array]) -> Array:
+    def bn_function(self, inputs: list[jax.Array]) -> jax.Array:
         concated_features = jnp.concat(inputs, axis=3)
         return self.conv1(nnx.relu(self.norm1(concated_features)))
 
-    def __call__(self, inputs: Array) -> Array:
-        prev_features = [inputs] if isinstance(inputs, Array) else inputs
+    def __call__(self, inputs: jax.Array) -> jax.Array:
+        prev_features = [inputs] if isinstance(inputs, jax.Array) else inputs
 
         bottleneck_output = self.bn_function(prev_features)
 
@@ -90,7 +90,7 @@ class _DenseBlock(nnx.Module):
         ]
         self.layers = layers
 
-    def __call__(self, init_features: Array) -> Array:
+    def __call__(self, init_features: jax.Array) -> jax.Array:
         features = [init_features]
         for layer in self.layers:
             new_features = layer(jnp.concat(features, axis=-1))
@@ -142,7 +142,6 @@ class DenseNet(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-
         features = [
             nnx.Conv(
                 3,
@@ -195,7 +194,7 @@ class DenseNet(nnx.Module):
             elif isinstance(m, nnx.Linear):
                 m.bias_init = nnx.initializers.constant(0)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         features = self.features(x)
         out = nnx.relu(features)
         out = out.mean(axis=(1, 2))

@@ -6,7 +6,6 @@ import jax.numpy as jnp
 from flax import nnx
 from flax.nnx import rnglib
 from flax.nnx.module import first_from
-from jax import Array
 
 
 class SqueezeExtraction(nnx.Module):
@@ -24,14 +23,14 @@ class SqueezeExtraction(nnx.Module):
         self.activation = activation
         self.scale_activation = scale_activation
 
-    def _scale(self, x: Array) -> Array:
+    def _scale(self, x: jax.Array) -> jax.Array:
         scale = x.mean(axis=(1, 2), keepdims=True)
         scale = self.fc1(scale)
         scale = self.activation(scale)
         scale = self.fc2(scale)
         return self.scale_activation(scale)
 
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         scale = self._scale(inputs)
         return scale * inputs
 
@@ -64,7 +63,7 @@ class MLP(nnx.Sequential):
 
 
 class Identity(nnx.Module):
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         return inputs
 
 
@@ -76,7 +75,13 @@ class DropPath(nnx.Module):
     rng_collection: str = "drop_path"
     rngs: rnglib.Rngs | None = None
 
-    def __call__(self, inputs: Array, *, deterministic: bool | None = None, rngs: rnglib.Rngs | None = None) -> Array:
+    def __call__(
+        self,
+        inputs: jax.Array,
+        *,
+        deterministic: bool | None = None,
+        rngs: rnglib.Rngs | None = None,
+    ) -> jax.Array:
         deterministic = first_from(
             deterministic,
             self.deterministic,

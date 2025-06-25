@@ -1,7 +1,7 @@
 from typing import Any
 
+import jax
 from flax import nnx
-from jax import Array
 
 __all__ = [
     "MNASNet",
@@ -59,7 +59,7 @@ class _InvertedResidual(nnx.Module):
             nnx.BatchNorm(out_ch, momentum=bn_momentum, rngs=rngs),
         )
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         if self.apply_residual:
             return self.layers(x) + x
         return self.layers(x)
@@ -194,7 +194,7 @@ class MNASNet(nnx.Module):
                 m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")
                 m.bias_init = nnx.initializers.zeros_init()
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.layers(x)
         x = x.mean(axis=(1, 2))
         return self.classifier(x)

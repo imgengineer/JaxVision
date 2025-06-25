@@ -2,8 +2,8 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any
 
+import jax
 from flax import nnx
-from jax import Array
 
 __all__ = [
     "ResNet",
@@ -87,7 +87,7 @@ class BasicBlock(nnx.Module):
         self.downsample = downsample
         self.stride = stride
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         identity = x
 
         out = self.conv1(x)
@@ -139,7 +139,7 @@ class Bottleneck(nnx.Module):
         self.downsample = downsample
         self.stride = stride
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         identity = x
 
         out = self.conv1(x)
@@ -298,7 +298,7 @@ class ResNet(nnx.Module):
         )
         return nnx.Sequential(*layers)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.conv1(x)
         x = self.bn1(x)
         x = nnx.relu(x)

@@ -6,7 +6,6 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import MLP, Conv2dNormActivation
 
@@ -79,7 +78,7 @@ class EncoderBlock(nnx.Module):
         self.ln_2 = norm_layer(hidden_dim, rngs=rngs)
         self.mlp = MLPBlock(hidden_dim, mlp_dim, dropout, rngs=rngs)
 
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         x = self.ln_1(inputs)
         x = self.self_attention(x, x, x)
         x = self.dropout(x)
@@ -124,7 +123,7 @@ class Encoder(nnx.Module):
         self.layers = nnx.Sequential(*layers)
         self.ln = norm_layer(hidden_dim, rngs=rngs)
 
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         inputs = inputs + self.pos_embedding.value
         return self.ln(self.layers(self.dropout(inputs)))
 
@@ -246,7 +245,7 @@ class VisionTransformer(nnx.Module):
             x = layers_dict["act"](x)
         return layers_dict["head"](x)
 
-    def _process_input(self, x: Array) -> Array:
+    def _process_input(self, x: jax.Array) -> jax.Array:
         n, h, w, c = x.shape
         p = self.patch_size
 
@@ -261,7 +260,7 @@ class VisionTransformer(nnx.Module):
         # where S is the source sequence length, N is the batch size, E is the
         # embedding dimension
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         # Reshape the input Tensor
         x = self._process_input(x)
         n = x.shape[0]

@@ -1,9 +1,9 @@
 from collections.abc import Callable
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 __all__ = [
     "ShuffleNetV2",
@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 
-def channel_shuffle(x: Array, groups: int) -> Array:
+def channel_shuffle(x: jax.Array, groups: int) -> jax.Array:
     bacth_size, height, width, num_channels = x.shape
     channels_per_group = num_channels // groups
 
@@ -29,7 +29,6 @@ def channel_shuffle(x: Array, groups: int) -> Array:
 
 class InvertedResidual(nnx.Module):
     def __init__(self, inp: int, oup: int, stride: int, *, rngs: nnx.Rngs):
-
         if not (1 <= stride <= 3):  # noqa: PLR2004
             msg = "illegal stride value"
             raise ValueError(msg)
@@ -61,7 +60,7 @@ class InvertedResidual(nnx.Module):
                     rngs=rngs,
                 ),
                 nnx.BatchNorm(branch_features, rngs=rngs),
-            nnx.relu,
+                nnx.relu,
             )
         else:
             self.branch1 = nnx.Sequential()
@@ -113,7 +112,7 @@ class InvertedResidual(nnx.Module):
     ) -> nnx.Conv:
         return nnx.Conv(i, o, kernel_size, stride, padding=padding, use_bias=bias, rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         if self.stride == 1:
             x1, x2 = jnp.split(x, 2, axis=3)
             out = jnp.concat([x1, self.branch2(x2)], axis=3)
@@ -192,7 +191,7 @@ class ShuffleNetV2(nnx.Module):
 
         self.fc = nnx.Linear(output_channels, num_classes, rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.conv1(x)
         x = self.maxpool(x)
         x = self.stage2(x)

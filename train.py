@@ -25,6 +25,7 @@ from pathlib import Path  # # Import Path from pathlib for object-oriented files
 
 import albumentations as A  # Import Albumentations for image augmentations.  # noqa: N812
 import grain.python as grain  # Import Grain for building data pipelines
+import jax
 import optax  # Import Optax for gradient processing and optimization
 from flax import nnx  # Import Flax NNX for neural network modules and utilities
 from tqdm import tqdm  # Import tqdm for displaying progress bars
@@ -180,7 +181,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
     return train_loader, val_loader
 
 
-def create_optimizer(model, learining_rate: float, weight_decay: float):
+def create_optimizer(model, learining_rate: float, weight_decay: float) -> nnx.Optimizer:
     """Create an Optax optimizer for the given model.
 
     Args:
@@ -221,7 +222,7 @@ def loss_fn(model, batch):
 
 
 @nnx.jit  # JIT compile this function for performance.
-def train_step(model, optimizer, metrics, batch):
+def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
     """Performs a single training step, including forward pass, loss calculation,
     gradient computation, and parameter update.
 
@@ -236,6 +237,7 @@ def train_step(model, optimizer, metrics, batch):
     # `has_aux=True` indicates that `loss_fn` returns auxiliary data (logits in this case)
     # along with the loss, which should not be differentiated.
     # Compute the loss, logits, and gradients.
+    batch = jax.device_put(batch)
     grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
     (loss, logits), grads = grad_fn(model, batch)
     # Update the training metrics with the current batch's loss, logits, and labels.
@@ -245,7 +247,7 @@ def train_step(model, optimizer, metrics, batch):
 
 
 @nnx.jit  # JIT compile this function for performance.
-def eval_step(model, metrics, batch):
+def eval_step(model, metrics: nnx.MultiMetric, batch):
     """Performs a single evaluation step, including forward pass and loss calculation.
     No gradient computation or parameter updates occur here.
 
@@ -255,6 +257,7 @@ def eval_step(model, metrics, batch):
         batch: A tuple containing (images, labels) for the current evaluation batch.
 
     """
+    batch = jax.device_put(batch)
     # Calculate the loss and logits for the current batch.
     loss, logits = loss_fn(model, batch)
     # Update the evaluation metrics with the current batch's loss, logits, and labels.

@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import Conv2dNormActivation, SqueezeExtraction
 from ..ops.stochastic_depth import StochasticDepth
@@ -114,7 +114,6 @@ class MBConv(nnx.Module):
         deterministic: bool = False,
         rngs: nnx.Rngs,
     ) -> None:
-
         if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
             msg = "illegal stride value"
             raise ValueError(msg)
@@ -179,7 +178,7 @@ class MBConv(nnx.Module):
         self.stochastic_depth = StochasticDepth(rate=stochastic_depth_prob, mode="row", rngs=rngs)
         self.out_channels = cnf.out_channels
 
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         result = self.block(inputs)
         if self.use_res_connect:
             result = self.stochastic_depth(result)
@@ -197,7 +196,6 @@ class FusedMBConv(nnx.Module):
         rngs: nnx.Rngs,
         deterministic: bool = False,
     ) -> None:
-
         if not (1 <= cnf.stride <= 2):  # noqa: PLR2004
             msg = "illegal stride value"
             raise ValueError(msg)
@@ -250,7 +248,7 @@ class FusedMBConv(nnx.Module):
         self.stochastic_depth = StochasticDepth(rate=stochastic_depth_prob, mode="row", rngs=rngs)
         self.out_channels = cnf.out_channels
 
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         result = self.block(inputs)
         if self.use_res_connect:
             result = self.stochastic_depth(result)
@@ -364,7 +362,7 @@ class EfficientNet(nnx.Module):
                 m.kernel_init = nnx.initializers.truncated_normal(lower=-init_range, upper=init_range)
                 m.bias_init = nnx.initializers.zeros_init()
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         x = jnp.mean(x, axis=(1, 2))
         return self.classifier(x)

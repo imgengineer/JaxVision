@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 from flax.nnx import rnglib
 from flax.nnx.module import Module, first_from
-from jax import Array
 
 
 @dataclasses.dataclass(repr=False)
@@ -19,11 +18,11 @@ class StochasticDepth(Module):
 
     def __call__(
         self,
-        inputs: Array,
+        inputs: jax.Array,
         *,
         deterministic: bool | None = None,
         rngs: rnglib.Rngs | None = None,
-    ) -> Array:
+    ) -> jax.Array:
         deterministic = first_from(
             deterministic,
             self.deterministic,

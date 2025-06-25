@@ -3,16 +3,16 @@ from collections.abc import Callable
 from functools import partial
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 __all__ = ["Inception3", "inception_v3"]
 
 
 class InceptionOutputs(NamedTuple):
-    logits: Array
-    aux_logits: Array | None
+    logits: jax.Array
+    aux_logits: jax.Array | None
 
 
 _InceptionOutputs = InceptionOutputs
@@ -90,7 +90,7 @@ class Inception3(nnx.Module):
                     m.scale_init = nnx.initializers.constant(1)
                     m.bias_init = nnx.initializers.constant(0)
 
-    def __call__(self, x: Array):
+    def __call__(self, x: jax.Array):
         # N x 3 x 299 x 299
         x = self.Conv2d_1a_3x3(x)
         # N x 32 x 149 x 149
@@ -122,7 +122,7 @@ class Inception3(nnx.Module):
         # N x 768 x 17 x 17
         x = self.Mixed_6e(x)
         # N x 768 x 17 x 17
-        aux: Array | None = None
+        aux: jax.Array | None = None
         if self.AuxLogits is not None and not self.deterministic:
             aux = self.AuxLogits(x)
         # N x 768 x 17 x 17
@@ -166,7 +166,7 @@ class InceptionA(nnx.Module):
 
         self.branch_pool = conv_block(in_channels, pool_features, kernel_size=(1, 1), rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         branch1x1 = self.branch1x1(x)
 
         branch5x5 = self.branch5x5_1(x)
@@ -199,7 +199,7 @@ class InceptionB(nnx.Module):
         self.branch3x3dbl_2 = conv_block(64, 96, kernel_size=(3, 3), padding=(1, 1), rngs=rngs)
         self.branch3x3dbl_3 = conv_block(96, 96, kernel_size=(3, 3), strides=(2, 2), rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         branch3x3 = self.branch3x3(x)
 
         branch3x3dbl = self.branch3x3dbl_1(x)
@@ -239,7 +239,7 @@ class InceptionC(nnx.Module):
 
         self.branch_pool = conv_block(in_channels, 192, kernel_size=(1, 1), rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         branch1x1 = self.branch1x1(x)
 
         branch7x7 = self.branch7x7_1(x)
@@ -277,7 +277,7 @@ class InceptionD(nnx.Module):
         self.branch7x7x3_3 = conv_block(192, 192, kernel_size=(7, 1), padding=(3, 0), rngs=rngs)
         self.branch7x7x3_4 = conv_block(192, 192, kernel_size=(3, 3), strides=(2, 2), rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         branch3x3 = self.branch3x3_1(x)
         branch3x3 = self.branch3x3_2(branch3x3)
 
@@ -315,7 +315,7 @@ class InceptionE(nnx.Module):
 
         self.branch_pool = conv_block(in_channels, 192, kernel_size=(1, 1), rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         branch1x1 = self.branch1x1(x)
 
         branch3x3 = self.branch3x3_1(x)
@@ -355,7 +355,7 @@ class InceptionAux(nnx.Module):
         self.conv1 = conv_block(128, 768, kernel_size=(5, 5), rngs=rngs)
         self.fc = nnx.Linear(768, num_classes, rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         # N x 768 x 17 x 17
         x = nnx.avg_pool(x, window_shape=(5, 5), strides=(3, 3), padding="SAME")
         # N x 768 x 5 x 5
@@ -375,7 +375,7 @@ class BasicConv2d(nnx.Module):
         self.conv = nnx.Conv(in_channels, out_channels, use_bias=False, rngs=rngs, **kwargs)
         self.bn = nnx.BatchNorm(out_channels, rngs=rngs, epsilon=0.001)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.conv(x)
         x = self.bn(x)
         return nnx.relu(x)

@@ -2,9 +2,8 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
-import jax.numpy as jnp
+import jax
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import Conv2dNormActivation
 from ..ops.stochastic_depth import StochasticDepth
@@ -41,7 +40,7 @@ class CNBlock(nnx.Module):
         self.layer_scale = nnx.Param(nnx.initializers.constant(layer_scale)(rngs.params(), (1, 1, 1, dim)))
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row", rngs=rngs)
 
-    def __call__(self, inputs: Array) -> Array:
+    def __call__(self, inputs: jax.Array) -> jax.Array:
         result = self.layer_scale * self.block(inputs)
         result = self.stochastic_depth(result)
         result += inputs
@@ -149,7 +148,7 @@ class ConvNeXt(nnx.Module):
                 if m.bias is not None:
                     m.bias_init = nnx.initializers.zeros_init()
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.features(x)
         x = x.mean(axis=(1, 2))
         return self.classifier(x)

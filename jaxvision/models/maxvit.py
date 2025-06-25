@@ -3,10 +3,10 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import Conv2dNormActivation, Identity, SqueezeExtraction
 from ..ops.stochastic_depth import StochasticDepth
@@ -34,7 +34,7 @@ def _make_block_input_shapes(input_size: tuple[int, int], n_blocks: int) -> list
     return shapes
 
 
-def _get_relative_position_index(height: int, width: int) -> Array:
+def _get_relative_position_index(height: int, width: int) -> jax.Array:
     coords_h = jnp.arange(height)
     coords_w = jnp.arange(width)
     coords = jnp.stack(jnp.meshgrid(coords_h, coords_w, indexing="ij"))  # (2, H, W)
@@ -130,12 +130,12 @@ class MBConv(nnx.Module):
         )
         self.layers = nnx.Sequential(*_layers)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
-            x (Array): Input tensor with expected layout of [B, H, W, C].
+            x (jax.Array): Input tensor with expected layout of [B, H, W, C].
 
         Returns:
-            Array: Output tensor with expected layout of [B, H / stride, W / stride, C].
+            jax.Array: Output tensor with expected layout of [B, H / stride, W / stride, C].
 
         """
         res = self.proj(x)
@@ -179,7 +179,7 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         )
         self.relative_position_index = _get_relative_position_index(self.size, self.size)
 
-    def get_relative_positional_bias(self) -> Array:
+    def get_relative_positional_bias(self) -> jax.Array:
         bias_index = self.relative_position_index.reshape(-1)
         relative_bias = self.relative_position_bias_table.value[bias_index].reshape(
             self.max_seq_len,
@@ -189,12 +189,12 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         relative_bias = relative_bias.transpose(2, 0, 1)
         return jnp.expand_dims(relative_bias, axis=0)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
-            x (Array): Input tensor with expected layout of [B, G, P, D].
+            x (jax.Array): Input tensor with expected layout of [B, G, P, D].
 
         Returns:
-            Array: Output tensor with expected layout of [B, G, P, D].
+            jax.Array: Output tensor with expected layout of [B, G, P, D].
 
         """
         B, G, P, D = x.shape  # noqa: N806
@@ -226,16 +226,16 @@ class SwapAxes(nnx.Module):
         self.a = a
         self.b = b
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         return x.swapaxes(self.a, self.b)
 
 
 class WindowPartition(nnx.Module):
     """Partition the input tensor into non-overlapping windows."""
 
-    def __call__(self, x: Array, p: int) -> Array:
+    def __call__(self, x: jax.Array, p: int) -> jax.Array:
         """Args:
-            x (Array): Input tensor with expected layout of [B, H, W, C].
+            x (jax.Array): Input tensor with expected layout of [B, H, W, C].
             p (int): Number of partitions.
 
         Returns:
@@ -253,15 +253,15 @@ class WindowPartition(nnx.Module):
 class WindowDepartition(nnx.Module):
     """Departition the input tensor of non-overlapping windows into a feature volume of layout [B, C, H, W]."""
 
-    def __call__(self, x: Array, p: int, h_partitions: int, w_partitions: int) -> Array:
+    def __call__(self, x: jax.Array, p: int, h_partitions: int, w_partitions: int) -> jax.Array:
         """Args:
-            x (Array): Input tensor with expected layout of [B, (H/P * W/P), P*P, C].
+            x (jax.Array): Input tensor with expected layout of [B, (H/P * W/P), P*P, C].
             p (int): Number of partitions.
             h_partitions (int): Number of vertical partitions.
             w_partitions (int): Number of horizontal partitions.
 
         Returns:
-            Array: Output tensor with expected layout of [B, H, W, C].
+            jax.Array: Output tensor with expected layout of [B, H, W, C].
 
         """
         B, G, PP, C = x.shape  # noqa: N806
@@ -347,12 +347,12 @@ class PartitionAttentionLayer(nnx.Module):
 
         self.stochastic_dropout = StochasticDepth(p_stochastic_dropout, mode="row", rngs=rngs)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
-            x (Array): Input tensor with expected layout of [B, H, W, C].
+            x (jax.Array): Input tensor with expected layout of [B, H, W, C].
 
         Returns:
-            Array: Output tensor with expected layout of [B, H, W, C].
+            jax.Array: Output tensor with expected layout of [B, H, W, C].
 
         """
         gh, gw = self.grid_size[0] // self.p, self.grid_size[1] // self.p
@@ -454,12 +454,12 @@ class MaxVitLayer(nnx.Module):
         )
         self.layers = nnx.Sequential(*layers)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
-            x (Array): Input tensor of shape (B, H, W, C).
+            x (jax.Array): Input tensor of shape (B, H, W, C).
 
         Returns:
-            Array: Output tensor of shape (B, H, W, C).
+            jax.Array: Output tensor of shape (B, H, W, C).
 
         """
         return self.layers(x)
@@ -541,7 +541,7 @@ class MaxVitBlock(nnx.Module):
             )
         self.layers = layers
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         for layer in self.layers:
             x = layer(x)
         return x
@@ -686,7 +686,7 @@ class MaxVit(nnx.Module):
 
         self._init_weights()
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         x = self.stem(x)
         for block in self.blocks:
             x = block(x)

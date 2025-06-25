@@ -1,8 +1,8 @@
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax import Array
 
 from ..ops.misc import DropPath
 
@@ -45,7 +45,7 @@ class StemLayer(nnx.Module):
         )
         self.norm2 = norm_layer(out_channels, rngs=rngs)  # Normalize along the last dimension (channels)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Performs the forward pass of the StemLayer.
 
         Args:
@@ -88,7 +88,7 @@ class DownsampleLayer(nnx.Module):
         )
         self.norm = norm_layer(out_channels, rngs=rngs)  # Normalize along the last dimension (channels)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Performs the forward pass of the DownsampleLayer.
 
         Args:
@@ -130,7 +130,7 @@ class MlpHead(nnx.Module):
         self.fc2 = nnx.Linear(hidden_features, num_classes, use_bias=bias, rngs=rngs)
         self.head_dropout = nnx.Dropout(rate=head_dropout, rngs=rngs)  # Dropout layer
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Performs the forward pass of the MlpHead.
 
         Args:
@@ -221,7 +221,7 @@ class GatedCNNBlock(nnx.Module):
         else:
             self.drop_path = None
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Performs the forward pass of the GatedCNNBlock.
 
         Args:
@@ -361,7 +361,7 @@ class MambaOut(nnx.Module):
                 if m.bias is not None:
                     m.bias_init = nnx.initializers.constant(0)
 
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: jax.Array) -> jax.Array:
         """Performs the full forward pass of the MambaOut model.
 
         Args:
