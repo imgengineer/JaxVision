@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 from ..ops.misc import Conv2dNormActivation
-from ..ops.misc import SqueezeExtraction as SElayer
+from ..ops.misc import SqueezeExcitation as SElayer
 from ._utils import _make_divisible
 
 __all__ = [

@@ -3,7 +3,7 @@ from .misc import (
     Conv2dNormActivation,
     DropPath,
     Identity,
-    SqueezeExtraction,
+    SqueezeExcitation,
 )
 from .stochastic_depth import StochasticDepth
 
@@ -12,6 +12,6 @@ __all__ = [
     "Conv2dNormActivation",
     "DropPath",
     "Identity",
-    "SqueezeExtraction",
+    "SqueezeExcitation",
     "StochasticDepth",
 ]

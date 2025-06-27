@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 
-from ..ops.misc import Conv2dNormActivation, Identity, SqueezeExtraction
+from ..ops.misc import Conv2dNormActivation, Identity, SqueezeExcitation
 from ..ops.stochastic_depth import StochasticDepth
 
 __all__ = [
@@ -118,7 +118,7 @@ class MBConv(nnx.Module):
                     groups=mid_channels,
                     rngs=rngs,
                 ),
-                SqueezeExtraction(mid_channels, sqz_channels, activation=nnx.silu, rngs=rngs),
+                SqueezeExcitation(mid_channels, sqz_channels, activation=nnx.silu, rngs=rngs),
                 nnx.Conv(
                     mid_channels,
                     out_channels,
@@ -179,9 +179,14 @@ class RelativePositionMultiHeadAttention(nnx.Module):
         )
         self.relative_position_index = _get_relative_position_index(self.size, self.size)
 
+        self.relative_position_bias_table.value = nnx.initializers.truncated_normal(stddev=0.02)(
+            rngs.params(),
+            self.relative_position_bias_table.value.shape,
+        )
+
     def get_relative_positional_bias(self) -> jax.Array:
         bias_index = self.relative_position_index.reshape(-1)
-        relative_bias = self.relative_position_bias_table.value[bias_index].reshape(
+        relative_bias = self.relative_position_bias_table[bias_index].reshape(
             self.max_seq_len,
             self.max_seq_len,
             -1,

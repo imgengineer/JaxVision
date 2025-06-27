@@ -8,7 +8,7 @@ from flax.nnx import rnglib
 from flax.nnx.module import first_from
 
 
-class SqueezeExtraction(nnx.Module):
+class SqueezeExcitation(nnx.Module):
     def __init__(
         self,
         input_channels: int,

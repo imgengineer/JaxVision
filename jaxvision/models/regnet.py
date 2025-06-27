@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
-from ..ops.misc import Conv2dNormActivation, SqueezeExtraction
+from ..ops.misc import Conv2dNormActivation, SqueezeExcitation
 from ._utils import _make_divisible
 
 __all__ = [
@@ -103,7 +103,7 @@ class BottleneckTransform(nnx.Sequential):
             # beginning of the block
             width_se_out = round(se_ratio * width_in)
             layers.append(
-                SqueezeExtraction(
+                SqueezeExcitation(
                     input_channels=w_b,
                     squeeze_channels=width_se_out,
                     activation=activation_layer,

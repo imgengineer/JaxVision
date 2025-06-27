@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
-from ..ops.misc import Conv2dNormActivation, SqueezeExtraction
+from ..ops.misc import Conv2dNormActivation, SqueezeExcitation
 from ..ops.stochastic_depth import StochasticDepth
 from ._utils import _make_divisible
 
@@ -109,7 +109,7 @@ class MBConv(nnx.Module):
         cnf: MBConvConfig,
         stochastic_depth_prob: float,
         norm_layer: Callable[..., nnx.Module],
-        se_layer: Callable[..., nnx.Module] = SqueezeExtraction,
+        se_layer: Callable[..., nnx.Module] = SqueezeExcitation,
         *,
         deterministic: bool = False,
         rngs: nnx.Rngs,

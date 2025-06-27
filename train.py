@@ -1,55 +1,36 @@
-import os  # Import the os module for interacting with the operating system
-
-# Set XLA flags for performance optimization on GPU.
-# XLA (Accelerated Linear Algebra) is a domain-specific compiler for linear algebra
-# that optimizes TensorFlow computations.
-os.environ["XLA_FLAGS"] = (
-    # Links to documentation for XLA performance flags.
-    # https://github.com/NVIDIA/JAX-Toolbox/blob/main/rosetta/docs/GPU_performance.md
-    # https://docs.jax.dev/en/latest/gpu_performance_tips.html#xla-performance-flags
-    # Enable Triton-based matrix multiplication. Triton is a language and compiler
-    # for writing highly efficient custom GPU kernels. This can improve the
-    # performance of matrix multiplications (GEMM).
-    "--xla_gpu_triton_gemm_any=True "
-    # Enable latency hiding optimizations. This flag allows XLA to overlap
-    # computation with data transfers, potentially reducing idle time.
-    "--xla_gpu_enable_latency_hiding_scheduler=true "
-)
-# Set the fraction of GPU memory that JAX should pre-allocate.
-# "0.95" means 95% of the available GPU memory will be pre-allocated for JAX operations.
-# This can prevent out-of-memory errors and improve performance by reducing
-# memory allocation overheads during runtime.
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 import csv  # Import the csv module for reading and writing CSV files
 from pathlib import Path  # # Import Path from pathlib for object-oriented filesystem paths
 
 import albumentations as A  # Import Albumentations for image augmentations.  # noqa: N812
 import grain.python as grain  # Import Grain for building data pipelines
-import jax
 import optax  # Import Optax for gradient processing and optimization
 from flax import nnx  # Import Flax NNX for neural network modules and utilities
 from tqdm import tqdm  # Import tqdm for displaying progress bars
 
 # Import custom modules from the current project
-from dataset import create_datasets  # Function to create training and validation datasets
-from jaxvision.models.resnet import resnet18  # ResNet18 model from JAXVision library
+from datasets import create_datasets  # Function to create training and validation datasets
+from jaxvision.models.resnet import resnet18
 from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap  # Custom transforms
 from jaxvision.utils import create_model, print_dataset_info, save_model, set_seed  # Utility functions
 
 # Configuration parameters for the training process
 params = {
     "num_epochs": 300,  # Total number of training epochs
-    "batch_size": 64,  # Number of samples per batch
+    "batch_size": 680,  # Number of samples per batch
     "target_size": 224,  # Target size (height and width) for image resizing
     "learning_rate": 5e-4,  # Learning rate for the optimizer
     "weight_decay": 1e-4,  # Weight decay (L2 regularization) to prevent overfitting
     "seed": 42,  # Random seed for reproducibility
-    "num_workers": 8,  # Number of worker processes for data loading
+    "num_workers": 64,  # Number of worker processes for data loading
     "num_classes": 16,  # Number of output classes for classification
-    "train_data_path": Path("./MpoxData/train"),  # Path to the training data directory
-    "val_data_path": Path("./MpoxData/validation"),  # Path to the validation data directory
+    "train_data_path": Path(
+        "/home/zhichenl489/JaxVision/Split_Augment_Mpox_Dermnet_16ClassesDataset/train",
+    ),  # Path to the training data directory
+    "val_data_path": Path(
+        "/home/zhichenl489/JaxVision/Split_Augment_Mpox_Dermnet_16ClassesDataset/test",
+    ),  # Path to the validation data directory
     "checkpoint_dir": Path(
-        "/Users/billy/Documents/DLStudy/JaxVision/checkpoints",
+        "/home/zhichenl489/JaxVision/checkpoints",
     ),  # Directory to save model checkpoints
 }
 
@@ -123,15 +104,15 @@ def create_dataloaders(train_dataset, val_dataset, params):
         len(train_dataset),  # The total number of samples in the data source.
         shuffle=True,  # Shuffle the data to randomize the order of samples for training.
         seed=params["seed"],  # Set a seed for reproducibility of shuffling.
-        shard_options=grain.NoSharding(),  # No sharding is applied since this is a single-device setup.
-        num_epochs=1,  # Iterate over the dataset for one epoch per call to the data loader.
+        shard_options=grain.ShardByJaxProcess(),  # No sharding is applied since this is a single-device setup.
+        num_epochs=8,  # Iterate over the dataset for one epoch per call to the data loader.
     )
     # Create an `grain.IndexSampler` for the validation data.
     val_sampler = grain.IndexSampler(
         len(val_dataset),
         shuffle=False,  # Do not shuffle validation data to ensure consistent evaluation.
         seed=params["seed"],
-        shard_options=grain.NoSharding(),
+        shard_options=grain.ShardByJaxProcess(),
         num_epochs=1,
     )
 
@@ -140,7 +121,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         data_source=train_dataset,  # The dataset to load data from.
         sampler=train_sampler,  # The sampler to determine how to access the data.
         worker_count=params["num_workers"],  # Number of child processes launched to parallelize data transformations.
-        worker_buffer_size=2,  # Count of output batches to produce in advance per worker to reduce pipeline stalls.
+        worker_buffer_size=4,  # Count of output batches to produce in advance per worker to reduce pipeline stalls.
         operations=[
             # Custom operation to load images using OpenCV.
             OpenCVLoadImageMap(),
@@ -164,7 +145,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         data_source=val_dataset,
         sampler=val_sampler,
         worker_count=params["num_workers"],
-        worker_buffer_size=2,
+        worker_buffer_size=4,
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
@@ -237,7 +218,6 @@ def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch)
     # `has_aux=True` indicates that `loss_fn` returns auxiliary data (logits in this case)
     # along with the loss, which should not be differentiated.
     # Compute the loss, logits, and gradients.
-    batch = jax.device_put(batch)
     grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
     (loss, logits), grads = grad_fn(model, batch)
     # Update the training metrics with the current batch's loss, logits, and labels.
@@ -257,7 +237,6 @@ def eval_step(model, metrics: nnx.MultiMetric, batch):
         batch: A tuple containing (images, labels) for the current evaluation batch.
 
     """
-    batch = jax.device_put(batch)
     # Calculate the loss and logits for the current batch.
     loss, logits = loss_fn(model, batch)
     # Update the evaluation metrics with the current batch's loss, logits, and labels.
@@ -268,7 +247,6 @@ def main():
     """Main function to orchestrate the training and validation process of the model."""
     set_seed(params["seed"])  # Set the random seed for reproducibility
 
-    print("🚀 Starting training with ResNet18...")
     print(f"📋 Configuration: {params}")
 
     # Create datasets and dataloaders
