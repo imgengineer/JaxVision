@@ -6,16 +6,15 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "albumentations>=2.0.8",
-    "datasets>=3.6.0",
     "flax[all]>=0.10.6",
     "grain>=0.2.10",
-    "jax>=0.6.1",
+    "jax[tpu]>=0.6.2",
     "opencv-python>=4.11.0.86",
     "optax>=0.2.5",
     "orbax>=0.1.9",
-    "polars>=1.30.0",
     "ruff>=0.11.11",
-    "torchvision>=0.22.1",
+    "setuptools>=80.9.0",
+    "tpu-info>=0.3.0",
     "tqdm>=4.67.1",
 ]
 
