@@ -68,7 +68,7 @@ class _DenseLayer(nnx.Module):
 class _DenseBlock(nnx.Module):
     _version = 2
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         num_layers: int,
         num_input_features: int,
@@ -131,7 +131,7 @@ class DenseNet(nnx.Module):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         growth_rate: int = 32,
         block_config: tuple[int, int, int, int] = (6, 12, 24, 16),
@@ -157,7 +157,7 @@ class DenseNet(nnx.Module):
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"),
         ]
 
-        # Each denseblock
+
         num_features = num_init_features
         for i, num_layers in enumerate(block_config):
             block = _DenseBlock(
@@ -184,7 +184,7 @@ class DenseNet(nnx.Module):
 
         self.classifier = nnx.Linear(num_features, num_classes, rngs=rngs)
 
-        # Official init from torch repo
+
         for _, m in self.iter_modules():
             if isinstance(m, nnx.Conv):
                 m.kernel_init = nnx.initializers.kaiming_normal()

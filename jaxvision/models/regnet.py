@@ -56,7 +56,7 @@ class SimpleStemIN(Conv2dNormActivation):
 class BottleneckTransform(nnx.Sequential):
     """Bottleneck transformation: 1x1, 3x3 [+SE], 1x1."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         width_in: int,
         width_out: int,
@@ -99,8 +99,8 @@ class BottleneckTransform(nnx.Sequential):
         )
 
         if se_ratio:
-            # The SE reduction ratio is defined with respect to the
-            # beginning of the block
+
+
             width_se_out = round(se_ratio * width_in)
             layers.append(
                 SqueezeExcitation(
@@ -128,7 +128,7 @@ class BottleneckTransform(nnx.Sequential):
 class ResBottlenectBlock(nnx.Module):
     """Residual bottleneck block: x + F(x), F = bottlenect transform."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         width_in: int,
         width_out: int,
@@ -141,7 +141,7 @@ class ResBottlenectBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        # Use skip connection with projection if shape changes
+
         self.proj = None
         should_proj = (width_in != width_out) or (stride != 1)
         if should_proj:
@@ -175,7 +175,7 @@ class ResBottlenectBlock(nnx.Module):
 class AnyStage(nnx.Sequential):
     """AnyNet stage (sequence of blocks w/ the sample output shape)."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         width_in: int,
         width_out: int,
@@ -208,7 +208,7 @@ class AnyStage(nnx.Sequential):
 
 
 class BlockParams:
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         depths: list[int],
         widths: list[int],
@@ -225,7 +225,7 @@ class BlockParams:
         self.se_ratio = se_ratio
 
     @classmethod
-    def from_init_params(  # noqa: PLR0913
+    def from_init_params(
         cls,
         depth: int,
         w_0: int,
@@ -253,13 +253,13 @@ class BlockParams:
         taking into account the skip connection and the final 1x1 convolutions.
         We use the fact that the output width is constant within a stage.
         """
-        QUANT = 8  # noqa: N806
-        STRIDE = 2  # noqa: N806
+        QUANT = 8
+        STRIDE = 2
 
         if w_a < 0 or w_0 <= 0 or w_m <= 1 or w_0 % 8 != 0:
             msg = "Invalid RegNet settings"
             raise ValueError(msg)
-        # Compute the block widths. Each stage has one unique block width
+
         widths_cont = jnp.arange(depth) * w_a + w_0
         block_capacity = jnp.round(jnp.log(widths_cont / w_0) / math.log(w_m))
         block_widths = (
@@ -268,7 +268,7 @@ class BlockParams:
 
         num_stages = len(set(block_widths))
 
-        # Convert to per stage paramsters
+
         split_helper = zip(
             [*block_widths, 0],
             [0, *block_widths],
@@ -285,7 +285,7 @@ class BlockParams:
         bottleneck_multipliers = [bottleneck_multiplier] * num_stages
         group_widths = [group_width] * num_stages
 
-        # Adjust the compatibility of stage widths and group widths
+
         stage_widths, group_widths = cls._adjust_widths_groups_compatibility(
             stage_widths,
             bottleneck_multipliers,
@@ -320,18 +320,17 @@ class BlockParams:
         """Adjust the compatibility of widths and groups,
         depending on the bottleneck ratio.
         """
-        # Compute all widths for the current settings
         widths = [int(w * b) for w, b in zip(stage_widths, bottleneck_ratios, strict=False)]
         group_widths_min = [min(g, w_bot) for g, w_bot in zip(group_widths, widths, strict=False)]
 
-        # Compute the adjusted widths so that stage and group widths fit
+
         ws_bot = [_make_divisible(w_bot, g) for w_bot, g in zip(widths, group_widths_min, strict=False)]
         stage_widths = [int(w_bot / b) for w_bot, b in zip(ws_bot, bottleneck_ratios, strict=False)]
         return stage_widths, group_widths_min
 
 
 class RegNet(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         block_params: BlockParams,
         num_classes: int = 1000,
@@ -352,9 +351,9 @@ class RegNet(nnx.Module):
         if activation is None:
             activation = nnx.relu
 
-        # Ad hoc stem
+
         self.stem = stem_type(
-            3,  # width_in
+            3,
             stem_width,
             norm_layer,
             activation,
@@ -370,7 +369,7 @@ class RegNet(nnx.Module):
             depth,
             group_width,
             bottleneck_multiplier,
-        ) in enumerate(block_params._get_expanded_params()):  # noqa: SLF001
+        ) in enumerate(block_params._get_expanded_params()):
             blocks.append(
                 AnyStage(
                     current_width,
@@ -392,7 +391,7 @@ class RegNet(nnx.Module):
 
         self.fc = nnx.Linear(current_width, num_classes, rngs=rngs)
 
-        # Performs ResNet-style weight initialization
+
         for _, m in self.iter_modules():
             if isinstance(m, nnx.Conv):
                 fan_out = m.kernel.value.shape[0] * m.kernel.value.shape[1] * m.out_features

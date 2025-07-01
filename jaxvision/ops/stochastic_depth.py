@@ -33,7 +33,7 @@ class StochasticDepth(Module):
         if (self.rate == 0.0) or deterministic:
             return inputs
 
-        # Prevent gradient NaNs in 1.0 edge-case.
+
         if self.rate == 1.0:
             return jnp.zeros_like(inputs)
 
@@ -45,10 +45,10 @@ class StochasticDepth(Module):
         )
         keep_prob = 1.0 - self.rate
         rng = rngs[self.rng_collection]()
-        # Zeroes randomly selected rows from the batch.
-        # Mask shape: (batch_size, 1, 1, ...) - broadcasting will handle the rest
-        # Randomly zeroes the entire input.
-        # Mask shape: (1, 1, 1, ...) - will broadcast to input.shape
+
+
+
+
         broadcast_shape = (inputs.shape[0],) + (1,) * (inputs.ndim - 1) if self.mode == "row" else (1,) * inputs.ndim
 
         mask = jax.random.bernoulli(rng, p=keep_prob, shape=broadcast_shape)

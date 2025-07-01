@@ -1,283 +1,163 @@
-import math
-from collections.abc import Callable
-from functools import partial
-from typing import NamedTuple
-
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-from ..ops.misc import MLP, Conv2dNormActivation
-
-__all__ = [
-    "VisionTransformer",
-    "vit_b_16",
-    "vit_b_32",
-    "vit_h_14",
-    "vit_l_16",
-    "vit_l_32",
-]
-
-
-class ConvStemConfig(NamedTuple):
-    out_channels: int
-    kernel_size: int
-    stride: int
-    norm_layer: Callable[..., nnx.Module] = nnx.BatchNorm
-    activation_layer: Callable[..., nnx.Module] = nnx.relu
-
-
-class MLPBlock(MLP):
-    """Transformer MLP block."""
-
-    _version = 2
-
-    def __init__(self, in_dim: int, mlp_dim: int, dropout: float, *, rngs: nnx.Rngs):
-        super().__init__(
-            in_dim,
-            [mlp_dim, in_dim],
-            activation_layer=nnx.gelu,
-            dropout=dropout,
-            rngs=rngs,
-        )
-        for _, m in self.iter_modules():
-            if isinstance(m, nnx.Linear):
-                m.kernel_init = nnx.initializers.xavier_uniform()
-                if m.bias is not None:
-                    m.bias_init = nnx.initializers.normal(stddev=1e-6)
-
-
-class EncoderBlock(nnx.Module):
-    """Transformer encoder block."""
-
-    def __init__(  # noqa: PLR0913
-        self,
-        num_heads: int,
-        hidden_dim: int,
-        mlp_dim: int,
-        dropout: float,
-        attention_dropout: float,
-        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
-        *,
-        rngs: nnx.Rngs,
-    ):
-        self.num_heads = num_heads
-
-        # Attention block
-        self.ln_1 = norm_layer(hidden_dim, rngs=rngs)
-        self.self_attention = nnx.MultiHeadAttention(
-            num_heads,
-            hidden_dim,
-            dropout_rate=attention_dropout,
-            decode=False,
-            rngs=rngs,
-        )
-        self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
-
-        # MLP block
-        self.ln_2 = norm_layer(hidden_dim, rngs=rngs)
-        self.mlp = MLPBlock(hidden_dim, mlp_dim, dropout, rngs=rngs)
-
-    def __call__(self, inputs: jax.Array) -> jax.Array:
-        x = self.ln_1(inputs)
-        x = self.self_attention(x, x, x)
-        x = self.dropout(x)
-        x = x + inputs
-
-        y = self.ln_2(x)
-        y = self.mlp(y)
-        return x + y
-
-
-class Encoder(nnx.Module):
-    """Transformer Model Encoder for sequence to sequence translation."""
-
-    def __init__(  # noqa: PLR0913
-        self,
-        seq_length: int,
-        num_layers: int,
-        num_heads: int,
-        hidden_dim: int,
-        mlp_dim: int,
-        dropout: float,
-        attention_dropout: float,
-        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
-        *,
-        rngs: nnx.Rngs,
-    ):
-        self.pos_embedding = nnx.Param(nnx.initializers.normal(stddev=0.02)(rngs.params(), (1, seq_length, hidden_dim)))
-        self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
-        layers: list[nnx.Module] = []
-        layers = [
-            EncoderBlock(
-                num_heads,
-                hidden_dim,
-                mlp_dim,
-                dropout,
-                attention_dropout,
-                norm_layer,
-                rngs=rngs,
-            )
-            for _ in range(num_layers)
-        ]
-        self.layers = nnx.Sequential(*layers)
-        self.ln = norm_layer(hidden_dim, rngs=rngs)
-
-    def __call__(self, inputs: jax.Array) -> jax.Array:
-        inputs = inputs + self.pos_embedding.value
-        return self.ln(self.layers(self.dropout(inputs)))
-
 
 class VisionTransformer(nnx.Module):
-    """Vision Transformer as per https://arxiv.org/abs/2010.11929."""
+    """Implements the ViT model, inheriting from `flax.nnx.Module`.
 
-    def __init__(  # noqa: PLR0913
+    Args:
+        num_classes (int): Number of classes in the classification. Defaults to 1000.
+        in_channels (int): Number of input channels in the image (such as 3 for RGB). Defaults to 3.
+        img_size (int): Input image size. Defaults to 224.
+        patch_size (int): Size of the patches extracted from the image. Defaults to 16.
+        num_layers (int): Number of transformer encoder layers. Defaults to 12.
+        num_heads (int): Number of attention heads in each transformer layer. Defaults to 12.
+        mlp_dim (int): Dimension of the hidden layers in the feed-forward/MLP block. Defaults to 3072.
+        hidden_size (int): Dimensionality of the embedding vectors. Defaults to 3072.
+        dropout_rate (int): Dropout rate (for regularization). Defaults to 0.1.
+        rngs (flax.nnx.Rngs): A set of named `flax.nnx.RngStream` objects that generate a stream of JAX pseudo-random number generator (PRNG) keys. Defaults to `flax.nnx.Rngs(0)`.
+
+    """
+
+    def __init__(
         self,
-        image_size: int,
-        patch_size: int,
-        num_layers: int,
-        num_heads: int,
-        hidden_dim: int,
-        mlp_dim: int,
-        dropout: float = 0.0,
-        attention_dropout: float = 0.0,
         num_classes: int = 1000,
-        representation_size: int | None = None,
-        norm_layer: Callable[..., nnx.Module] = partial(nnx.LayerNorm, epsilon=1e-6),  # noqa: B008
-        conv_stem_configs: list[ConvStemConfig] | None = None,
+        in_channels: int = 3,
+        img_size: int = 224,
+        patch_size: int = 16,
+        num_layers: int = 12,
+        num_heads: int = 12,
+        mlp_dim: int = 3072,
+        hidden_size: int = 768,
+        dropout_rate: float = 0.1,
         *,
-        rngs: nnx.Rngs,
+        rngs: nnx.Rngs = nnx.Rngs(0),
     ):
-        self.image_size = image_size
-        self.patch_size = patch_size
-        self.hidden_dim = hidden_dim
-        self.mlp_dim = mlp_dim
-        self.attention_dropout = attention_dropout
-        self.dropout = dropout
-        self.num_classes = num_classes
-        self.representation_size = representation_size
-        self.norm_layer = norm_layer
-
-        if conv_stem_configs is not None:
-            # As per https://arxiv.org/abs/2104.14881
-            self.seq_proj_layers = {}
-            prev_channels = 3
-            for i, conv_stem_layer_config in enumerate(conv_stem_configs):
-                layer_name = f"conv_bn_relu_{i}"
-                self.conv_proj[layer_name] = Conv2dNormActivation(
-                    in_channels=prev_channels,
-                    out_channels=conv_stem_layer_config.out_channels,
-                    kernel_size=conv_stem_layer_config.kernel_size,
-                    stride=conv_stem_layer_config.stride,
-                    norm_layer=conv_stem_layer_config.norm_layer,
-                    activation_layer=conv_stem_layer_config.activation_layer,
-                    rngs=rngs,
-                )
-                prev_channels = conv_stem_layer_config.out_channels
-            self.seq_proj_layers["conv_last"] = nnx.Conv(
-                prev_channels,
-                hidden_dim,
-                kernel_size=(1, 1),
-                rngs=rngs,
-            )
-        else:
-            self.conv_proj = nnx.Conv(
-                3,
-                hidden_dim,
-                kernel_size=(patch_size, patch_size),
-                strides=(patch_size, patch_size),
-                rngs=rngs,
-            )
-
-        seq_length = (image_size // patch_size) ** 2
-
-        # Add a class token
-        self.class_token = nnx.Param(nnx.initializers.zeros_init()(rngs.params(), (1, 1, hidden_dim)))
-        seq_length += 1
-
-        self.encoder = Encoder(
-            seq_length,
-            num_layers,
-            num_heads,
-            hidden_dim,
-            mlp_dim,
-            dropout,
-            attention_dropout,
-            norm_layer,
+        # Calculate the number of patches generated from the image.
+        n_patches = (img_size // patch_size) ** 2
+        # Patch embeddings:
+        # - Extracts patches from the input image and maps them to embedding vectors
+        #   using `flax.nnx.Conv` (convolutional layer).
+        self.patch_embedding = nnx.Conv(
+            in_channels,
+            hidden_size,
+            kernel_size=(patch_size, patch_size),
+            strides=(patch_size, patch_size),
+            padding="VALID",
+            use_bias=True,
             rngs=rngs,
         )
 
-        self.seq_length = seq_length
+        # Positional embeddings (add information about image patch positions):
+        # Set the truncated normal initializer (using `jax.nn.initializers.truncated_normal`).
+        initializer = nnx.initializers.truncated_normal(stddev=0.02)
+        # The learnable parameter for positional embeddings (using `flax.nnx.Param`).
+        self.position_embedding = nnx.Param(
+            initializer(rngs.params(), (1, n_patches + 1, hidden_size), jnp.float32),
+        )  # Shape `(1, n_patches +1, hidden_size`)
+        # The dropout layer.
+        self.dropout = nnx.Dropout(dropout_rate, rngs=rngs)
+        # CLS token (a special token prepended to the sequence of patch embeddings)
+        # using `flax.nnx.Param`.
+        self.cls_token = nnx.Param(jnp.zeros((1, 1, hidden_size)))
 
-        self.heads_layers = {}
-        if representation_size is None:
-            self.heads_layers["head"] = nnx.Linear(hidden_dim, num_classes, rngs=rngs)
-        else:
-            self.heads_layers["pre_logits"] = nnx.Linear(hidden_dim, representation_size, rngs=rngs)
-            self.heads_layers["act"] = nnx.tanh
-            self.heads_layers["head"] = nnx.Linear(representation_size, num_classes, rngs=rngs)
+        # Transformer encoder (a sequence of encoder blocks for feature extraction).
+        # - Create multiple Transformer encoder blocks (with `nnx.Sequential`
+        # and `TransformerEncoder(nnx.Module)` which is defined later).
+        self.encoder = nnx.Sequential(*[TransformerEncoder(hidden_size, mlp_dim, num_heads, dropout_rate, rngs=rngs) for _ in range(num_layers)])
+        # Layer normalization with `flax.nnx.LayerNorm`.
+        self.final_norm = nnx.LayerNorm(hidden_size, rngs=rngs)
 
-        self.heads = lambda x: self._run_heads(x, self.heads_layers)
+        # Classification head (maps the transformer encoder to class probabilities).
+        self.classifier = nnx.Linear(hidden_size, num_classes, rngs=rngs)
 
-        if isinstance(self.conv_proj, nnx.Conv):
-            # Init the patchify stem
-            fan_in = self.conv_proj.in_features * self.conv_proj.kernel_size[0] * self.conv_proj.kernel_size[1]
-            self.conv_proj.kernel_init = nnx.initializers.truncated_normal(stddev=math.sqrt(1 / fan_in))
-            if self.conv_proj.bias is not None:
-                self.conv_proj.bias_init = nnx.initializers.zeros_init()
-        elif self.seq_proj_layers["conv_last"] is not None and isinstance(self.seq_proj_layers["conv_last"], nnx.Conv):
-            self.seq_proj_layers["conv_last"].kernel_init = nnx.initializers.normal(
-                stddev=math.sqrt(2.0 / self.seq_proj_layers["conv_last"].out_features),
-            )
-        if hasattr(self.heads_layers, "pre_logits") and isinstance(self.heads_layers["pre_logits"], nnx.Linear):
-            fan_in = self.heads_layers["pre_logits"].in_features
-            self.heads_layers["pre_logits"].kernel_init = nnx.initializers.truncated_normal(
-                stddev=math.sqrt(1 / fan_in),
-            )
-            self.heads_layers["pre_logits"].bias_init = nnx.initializers.zeros_init()
-        if isinstance(self.heads_layers["head"], nnx.Linear):
-            self.heads_layers["head"].kernel_init = nnx.initializers.zeros_init()
-            self.heads_layers["head"].bias_init = nnx.initializers.zeros_init()
-
-    def _run_heads(self, x, layers_dict):
-        if "pre_logits" in layers_dict:
-            x = layers_dict["pre_logits"](x)
-            x = layers_dict["act"](x)
-        return layers_dict["head"](x)
-
-    def _process_input(self, x: jax.Array) -> jax.Array:
-        n, h, w, c = x.shape
-        p = self.patch_size
-
-        n_h = h // p
-        n_w = w // p
-
-        # (n, h, w, c) -> (n, n_h, n_w, hidden_dim)
-        x = self.conv_proj(x)
-        # (n, n_h, n_w, hidden_dim) -> (n, (n_h * n_w), hidden_dim)
-        return x.reshape(n, n_h * n_w, self.hidden_dim)
-        # The self attention layer expects inputs in the format (N, S, E)
-        # where S is the source sequence length, N is the batch size, E is the
-        # embedding dimension
-
+    # The forward pass in the ViT model.
     def __call__(self, x: jax.Array) -> jax.Array:
-        # Reshape the input Tensor
-        x = self._process_input(x)
-        n = x.shape[0]
+        # Image patch embeddings.
+        # Extract image patches and embed them.
+        patches = self.patch_embedding(x)
+        # Get the batch size of image patches.
+        batch_size = patches.shape[0]
+        # Reshape the image patches.
+        patches = patches.reshape(batch_size, -1, patches.shape[-1])
+        # Replicate the CLS token for each image with `jax.numpy.tile`
+        # by constructing an array by repeating `cls_token` along `[batch, 1, 1]` dimensions.
+        cls_token = jnp.tile(self.cls_token, [batch_size, 1, 1])
+        # Concatenate the CLS token and image patch embeddings.
+        x = jnp.concat([cls_token, patches], axis=1)
+        # Create embedded patches by adding position embeddings to the concatenated CLS token and image patch embeddings.
+        embeddings = x + self.position_embedding
+        # Apply the dropout layer to embedded patches.
+        embeddings = self.dropout(embeddings)
+        # Transformer encoder blocks.
+        x = self.encoder(embeddings)
+        # Apply layer normalization
+        x = self.final_norm(x)
 
-        # Expand the class token to the full batch
-        batch_class_token = jnp.broadcast_to(self.class_token.value, (n, *self.class_token.value.shape[1:]))
-        x = jnp.concat([batch_class_token, x], axis=1)
-
-        x = self.encoder(x)
-
-        # Classifier "token" as used by standard language architectures
+        # Extract the CLS token (first token), which represents the overall image embedding.
         x = x[:, 0]
+        # Predict class probabilities based on the CLS token embedding.
+        return self.classifier(x)
 
-        return self.heads(x)
+
+class TransformerEncoder(nnx.Module):
+    """A single transformer encoder block in the ViT model, inheriting from `flax.nnx.Module`.
+
+    Args:
+        hidden_size (int): Input/output embedding dimensionality.
+        mlp_dim (int): Dimension of the feed-forward/MLP block hidden layer.
+        num_heads (int): Number of attention heads.
+        dropout_rate (float): Dropout rate. Defaults to 0.0.
+        rngs (flax.nnx.Rngs): A set of named `flax.nnx.RngStream` objects that generate a stream of JAX pseudo-random number generator (PRNG) keys. Defaults to `flax.nnx.Rngs(0)`.
+
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        mlp_dim: int,
+        num_heads: int,
+        dropout_rate: float = 0.0,
+        *,
+        rngs: nnx.Rngs = nnx.Rngs(0),
+    ):
+        # First layer normalization using `flax.nnx.LayerNorm`
+        # before we apply Multi-Head Attention.
+        self.norm1 = nnx.LayerNorm(hidden_size, rngs=rngs)
+        # The Multi-Head Attention layer (using `flax.nnx.MultiHeadAttention`).
+        self.attn = nnx.MultiHeadAttention(
+            num_heads=num_heads,
+            in_features=hidden_size,
+            dropout_rate=dropout_rate,
+            broadcast_dropout=False,
+            decode=False,
+            deterministic=False,
+            rngs=rngs,
+        )
+        # Second layer normalization using `flax.nnx.LayerNorm`.
+        self.norm2 = nnx.LayerNorm(hidden_size, rngs=rngs)
+
+        # The MLP for point-wise feedforward (using `flax.nnx.Sequential`, `flax.nnx.Linear`, `flax.nnx.Dropout`)
+        # with the GeLU activation function (`flax.nnx.gelu`).
+        self.mlp = nnx.Sequential(
+            nnx.Linear(hidden_size, mlp_dim, rngs=rngs),
+            nnx.gelu,
+            nnx.Dropout(dropout_rate, rngs=rngs),
+            nnx.Linear(mlp_dim, hidden_size, rngs=rngs),
+            nnx.Dropout(dropout_rate, rngs=rngs),
+        )
+
+    # The forward pass through the transformer encoder block.
+    def __call__(self, x: jax.Array) -> jax.Array:
+        # The Multi-Head Attention layer with layer normalization.
+        x = x + self.attn(self.norm1(x))
+        # The feed-forward network with layer normalization.
+        x = x = +self.mlp(self.norm2(x))
+        return x
 
 
-def _vision_transformer(  # noqa: PLR0913
+def _vision_transformer(
     patch_size: int,
     num_layers: int,
     num_heads: int,
@@ -290,11 +170,11 @@ def _vision_transformer(  # noqa: PLR0913
     image_size = kwargs.pop("image_size", 224)
 
     return VisionTransformer(
-        image_size=image_size,
+        img_size=image_size,
         patch_size=patch_size,
         num_layers=num_layers,
         num_heads=num_heads,
-        hidden_dim=hidden_dim,
+        hidden_size=hidden_dim,
         mlp_dim=mlp_dim,
         rngs=rngs,
         **kwargs,

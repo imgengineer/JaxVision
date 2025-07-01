@@ -36,7 +36,7 @@ class SqueezeExcitation(nnx.Module):
 
 
 class MLP(nnx.Sequential):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         in_channels: int,
         hidden_channels: list[int],
@@ -90,7 +90,7 @@ class DropPath(nnx.Module):
         )
         if (self.drop_prob == 0.0) or deterministic:
             return inputs
-        # Prevent gradient NaNs in 1.0 edge-case.
+
         if self.drop_prob == 1.0:
             return jnp.zeros_like(inputs)
 
@@ -104,7 +104,7 @@ class DropPath(nnx.Module):
 
 
 class Conv2dNormActivation(nnx.Sequential):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         in_channels: int,
         out_channels,

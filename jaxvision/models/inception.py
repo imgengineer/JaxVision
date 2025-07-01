@@ -19,7 +19,7 @@ _InceptionOutputs = InceptionOutputs
 
 
 class Inception3(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         num_classes: int = 1000,
         inception_blocks: list[Callable[..., nnx.Module]] | None = None,
@@ -37,12 +37,12 @@ class Inception3(nnx.Module):
             warnings.warn(
                 "The default weight initialization of inception_v3 will be changed in future releases of "
                 "torchvision. If you wish to keep the old behavior (which leads to long initialization times"
-                " due to scipy/scipy#11299), please set init_weights=True.",
+                " due to scipy/scipy",
                 FutureWarning,
                 stacklevel=2,
             )
             init_weights = True
-        if len(inception_blocks) != 7:  # noqa: PLR2004
+        if len(inception_blocks) != 7:
             msg = f"length of inception_blocks should be 7 instead of {len(inception_blocks)}"
             raise ValueError(msg)
         self.deterministic = deterministic
@@ -91,54 +91,52 @@ class Inception3(nnx.Module):
                     m.bias_init = nnx.initializers.constant(0)
 
     def __call__(self, x: jax.Array):
-        # N x 3 x 299 x 299
         x = self.Conv2d_1a_3x3(x)
-        # N x 32 x 149 x 149
+
         x = self.Conv2d_2a_3x3(x)
-        # N x 32 x 147 x 147
+
         x = self.Conv2d_2b_3x3(x)
-        # N x 64 x 147 x 147
+
         x = self.maxpool1(x)
-        # N x 64 x 73 x 73
+
         x = self.Conv2d_3b_1x1(x)
-        # N x 80 x 73 x 73
+
         x = self.Conv2d_4a_3x3(x)
-        # N x 192 x 71 x 71
+
         x = self.maxpool2(x)
-        # N x 192 x 35 x 35
+
         x = self.Mixed_5b(x)
-        # N x 256 x 35 x 35
+
         x = self.Mixed_5c(x)
-        # N x 288 x 35 x 35
+
         x = self.Mixed_5d(x)
-        # N x 288 x 35 x 35
+
         x = self.Mixed_6a(x)
-        # N x 768 x 17 x 17
+
         x = self.Mixed_6b(x)
-        # N x 768 x 17 x 17
+
         x = self.Mixed_6c(x)
-        # N x 768 x 17 x 17
+
         x = self.Mixed_6d(x)
-        # N x 768 x 17 x 17
+
         x = self.Mixed_6e(x)
-        # N x 768 x 17 x 17
+
         aux: jax.Array | None = None
         if self.AuxLogits is not None and not self.deterministic:
             aux = self.AuxLogits(x)
-        # N x 768 x 17 x 17
+
         x = self.Mixed_7a(x)
-        # N x 1280 x 8 x 8
+
         x = self.Mixed_7b(x)
-        # N x 2048 x 8 x 8
+
         x = self.Mixed_7c(x)
-        # N x 2048 x 8 x 8
-        # Adaptive average pooling
+
         x = x.mean(axis=(1, 2))
-        # N x 2048
+
         x = self.dropout(x)
-        # N x 2048
+
         x = self.fc(x)
-        # N x 1000 (num_classes)
+
         if not self.deterministic and self.aux_logits:
             return InceptionOutputs(x, aux)
         return x
@@ -356,18 +354,15 @@ class InceptionAux(nnx.Module):
         self.fc = nnx.Linear(768, num_classes, rngs=rngs)
 
     def __call__(self, x: jax.Array) -> jax.Array:
-        # N x 768 x 17 x 17
         x = nnx.avg_pool(x, window_shape=(5, 5), strides=(3, 3), padding="SAME")
-        # N x 768 x 5 x 5
+
         x = self.conv0(x)
-        # N x 128 x 5 x 5
+
         x = self.conv1(x)
-        # N x 768 x 1 x 1
-        # Adaptive average pooling
+
         x = x.mean(axis=(1, 2))
-        # N x 768
+
         return self.fc(x)
-        # N x 1000
 
 
 class BasicConv2d(nnx.Module):

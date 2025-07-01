@@ -10,7 +10,7 @@ __all__ = ["MobileNetV2", "mobilenet_v2"]
 
 
 class InvertedResidual(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         inp: int,
         oup: int,
@@ -33,7 +33,7 @@ class InvertedResidual(nnx.Module):
 
         layers: list[nnx.Module] = []
         if expand_ratio != 1:
-            # pw
+
             layers.append(
                 Conv2dNormActivation(
                     inp,
@@ -46,7 +46,7 @@ class InvertedResidual(nnx.Module):
             )
         layers.extend(
             [
-                # dw
+
                 Conv2dNormActivation(
                     hidden_dim,
                     hidden_dim,
@@ -56,7 +56,7 @@ class InvertedResidual(nnx.Module):
                     activation_layer=nnx.relu6,
                     rngs=rngs,
                 ),
-                # pw-linear
+
                 nnx.Conv(
                     hidden_dim,
                     oup,
@@ -80,7 +80,7 @@ class InvertedResidual(nnx.Module):
 
 
 class MobileNetV2(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         num_classes: int = 1000,
         width_mult: float = 1.0,
@@ -116,7 +116,7 @@ class MobileNetV2(nnx.Module):
 
         if inverted_residual_setting is None:
             inverted_residual_setting = [
-                # t, c, n, s
+
                 [1, 16, 1, 1],
                 [6, 24, 2, 2],
                 [6, 32, 3, 2],
@@ -126,14 +126,14 @@ class MobileNetV2(nnx.Module):
                 [6, 320, 1, 1],
             ]
 
-        # only check the first element, assuming user known t, c, n, s are required
+
         if (
-            len(inverted_residual_setting) == 0 or len(inverted_residual_setting[0]) != 4  # noqa: PLR2004
+            len(inverted_residual_setting) == 0 or len(inverted_residual_setting[0]) != 4
         ):
             msg = f"inveted_residual_setting should be non-empty or a 4-element list, got {inverted_residual_setting}"
             raise ValueError(msg)
 
-        # building first layer
+
         input_channel = _make_divisible(input_channel * width_mult, round_nearest)
         self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
         features: list[nnx.Module] = [
@@ -147,7 +147,7 @@ class MobileNetV2(nnx.Module):
             ),
         ]
 
-        # building inverted residual blocks
+
         for t, c, n, s in inverted_residual_setting:
             output_channel = _make_divisible(c * width_mult, round_nearest)
             for i in range(n):
@@ -163,7 +163,7 @@ class MobileNetV2(nnx.Module):
                     ),
                 )
                 input_channel = output_channel
-        # building last several layers
+
         features.append(
             Conv2dNormActivation(
                 input_channel,
@@ -175,16 +175,16 @@ class MobileNetV2(nnx.Module):
             ),
         )
 
-        # make it nnx.Sequential
+
         self.features = nnx.Sequential(*features)
 
-        # building classifier
+
         self.classifier = nnx.Sequential(
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(self.last_channel, num_classes, rngs=rngs),
         )
 
-        # weight initialization
+
         for _, m in self.iter_modules():
             if isinstance(m, nnx.Conv):
                 m.kernel_init = nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal")

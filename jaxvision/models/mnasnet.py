@@ -11,13 +11,13 @@ __all__ = [
     "mnasnet1_3",
 ]
 
-# Paper suggests 0.9997 momentum, for TensorFlow. Equivalent PyTorch momentum is
-# 1.0 - tensorflow.
+
+
 _BN_MOMENTUM = 1 - 0.9997
 
 
 class _InvertedResidual(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         in_ch: int,
         out_ch: int,
@@ -37,11 +37,11 @@ class _InvertedResidual(nnx.Module):
         mid_ch = in_ch * expansion_factor
         self.apply_residual = in_ch == out_ch and stride == 1
         self.layers = nnx.Sequential(
-            # Pointwise
+
             nnx.Conv(in_ch, mid_ch, kernel_size=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(mid_ch, momentum=bn_momentum, rngs=rngs),
             nnx.relu,
-            # Depthwise
+
             nnx.Conv(
                 mid_ch,
                 mid_ch,
@@ -54,7 +54,7 @@ class _InvertedResidual(nnx.Module):
             ),
             nnx.BatchNorm(mid_ch, momentum=bn_momentum, rngs=rngs),
             nnx.relu,
-            # Linear pointwise. Note that there's no activation.
+
             nnx.Conv(mid_ch, out_ch, kernel_size=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(out_ch, momentum=bn_momentum, rngs=rngs),
         )
@@ -65,7 +65,7 @@ class _InvertedResidual(nnx.Module):
         return self.layers(x)
 
 
-def _stack(  # noqa: PLR0913
+def _stack(
     in_ch: int,
     out_ch: int,
     kernel_size: int,
@@ -80,7 +80,7 @@ def _stack(  # noqa: PLR0913
     if repeats < 1:
         msg = f"repeats should be >= 1, instead got {repeats}"
         raise ValueError(msg)
-    # First one has no skip, because feature map size changes.
+
     first = _InvertedResidual(in_ch, out_ch, kernel_size, stride, exp_factor, bn_momentum=bn_momentum, rngs=rngs)
     remaining = []
     remaining = [
@@ -122,7 +122,6 @@ class MNASNet(nnx.Module):
     1000.
     """
 
-    # Version 2 adds depth scaling in the initial stages of the network.
     _version = 2
 
     def __init__(
@@ -140,11 +139,11 @@ class MNASNet(nnx.Module):
         self.num_classes = num_classes
         depths = _get_depths(alpha)
         layers = [
-            # First layer: regular conv.
+
             nnx.Conv(3, depths[0], kernel_size=(3, 3), padding="SAME", strides=(2, 2), use_bias=False, rngs=rngs),
             nnx.BatchNorm(depths[0], momentum=_BN_MOMENTUM, rngs=rngs),
             nnx.relu,
-            # Depthwise separable, no skip.
+
             nnx.Conv(
                 depths[0],
                 depths[0],
@@ -167,14 +166,14 @@ class MNASNet(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(depths[1], momentum=_BN_MOMENTUM, rngs=rngs),
-            # MNASNet blocks: stacks of inverted residuals.
+
             _stack(depths[1], depths[2], 3, 2, 3, 3, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[2], depths[3], 5, 2, 3, 3, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[3], depths[4], 5, 2, 6, 3, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[4], depths[5], 3, 1, 6, 2, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[5], depths[6], 5, 2, 6, 4, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[6], depths[7], 3, 1, 6, 1, _BN_MOMENTUM, rngs=rngs),
-            # Final mapping to classifier input.
+
             nnx.Conv(depths[7], 1280, kernel_size=(1, 1), padding="SAME", strides=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(1280, momentum=_BN_MOMENTUM, rngs=rngs),
             nnx.relu,

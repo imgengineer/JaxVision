@@ -21,7 +21,7 @@ _GoogLeNetOutputs = GoogLeNetOutputs
 
 
 class GoogLeNet(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         num_classes: int = 1000,
         blocks: list[Callable[..., nnx.Module]] | None = None,
@@ -40,12 +40,12 @@ class GoogLeNet(nnx.Module):
             warnings.warn(
                 "The default weight initialization of GoogleNet will be changed in future releases of "
                 "torchvision. If you wish to keep the old behavior (which leads to long initialization times"
-                " due to scipy/scipy#11299), please set init_weights=True.",
+                " due to scipy/scipy",
                 FutureWarning,
                 stacklevel=2,
             )
             init_weights = True
-        if len(blocks) != 3:  # noqa: PLR2004
+        if len(blocks) != 3:
             msg = f"blocks length should be 3 instead of {len(blocks)}"
             raise ValueError(msg)
 
@@ -111,13 +111,11 @@ class GoogLeNet(nnx.Module):
         x = self.conv3(x)
         x = self.maxpool2(x)
 
-        # Inception 3 blocks: N x 28 x 28 x 192 -> N x 14 x 14 x 480
         x = self.inception3a(x)
         x = self.inception3b(x)
         x = self.maxpool3(x)
 
-        # Inception 4 blocks with auxiliary classifiers
-        x = self.inception4a(x)  # N x 14 x 14 x 512
+        x = self.inception4a(x)
 
         aux1 = None
         if self.aux1 is not None and not self.deterministic:
@@ -125,21 +123,19 @@ class GoogLeNet(nnx.Module):
 
         x = self.inception4b(x)
         x = self.inception4c(x)
-        x = self.inception4d(x)  # N x 14 x 14 x 528
+        x = self.inception4d(x)
 
         aux2 = None
         if self.aux2 is not None and not self.deterministic:
             aux2 = self.aux2(x)
 
-        x = self.inception4e(x)  # N x 14 x 14 x 832
-        x = self.maxpool4(x)  # N x 7 x 7 x 832
+        x = self.inception4e(x)
+        x = self.maxpool4(x)
 
-        # Inception 5 blocks and final classification
         x = self.inception5a(x)
-        x = self.inception5b(x)  # N x 7 x 7 x 1024
+        x = self.inception5b(x)
 
-        # Global average pooling and classification
-        x = x.mean(axis=(1, 2))  # N x 1024
+        x = x.mean(axis=(1, 2))
         x = self.dropout(x)
         x = self.fc(x)
 
@@ -149,7 +145,7 @@ class GoogLeNet(nnx.Module):
 
 
 class Inception(nnx.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         in_channels: int,
         ch1x1: int,
@@ -165,22 +161,18 @@ class Inception(nnx.Module):
         if conv_block is None:
             conv_block = BasicConv2d
 
-        # Branch 1: 1x1 conv
         self.branch1 = conv_block(in_channels, ch1x1, kernel_size=(1, 1), rngs=rngs)
 
-        # Branch 2: 1x1 conv -> 3x3 conv
         self.branch2 = nnx.Sequential(
             conv_block(in_channels, ch3x3red, kernel_size=(1, 1), rngs=rngs),
             conv_block(ch3x3red, ch3x3, kernel_size=(3, 3), padding="SAME", rngs=rngs),
         )
 
-        # Branch 3: 1x1 conv -> 3x3 conv (originally 5x5)
         self.branch3 = nnx.Sequential(
             conv_block(in_channels, ch5x5red, kernel_size=(1, 1), rngs=rngs),
             conv_block(ch5x5red, ch5x5, kernel_size=(3, 3), padding="SAME", rngs=rngs),
         )
 
-        # Branch 4: maxpool -> 1x1 conv
         self.branch4 = nnx.Sequential(
             partial(nnx.max_pool, window_shape=(3, 3), strides=(1, 1), padding="SAME"),
             conv_block(in_channels, pool_proj, kernel_size=(1, 1), rngs=rngs),
@@ -214,7 +206,6 @@ class InceptionAux(nnx.Module):
         self.dropout = nnx.Dropout(rate=dropout, rngs=rngs)
 
     def __call__(self, x: jax.Array) -> jax.Array:
-        # Adaptive average pooling to 4x4
         x = jax.image.resize(x, shape=(x.shape[0], 4, 4, x.shape[-1]), method=ResizeMethod.LINEAR)
         x = self.conv(x)
         x = x.reshape(x.shape[0], -1)

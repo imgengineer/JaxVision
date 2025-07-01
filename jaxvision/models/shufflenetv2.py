@@ -18,25 +18,25 @@ def channel_shuffle(x: jax.Array, groups: int) -> jax.Array:
     bacth_size, height, width, num_channels = x.shape
     channels_per_group = num_channels // groups
 
-    # reshape
+
     x = x.reshape(bacth_size, height, width, groups, channels_per_group)
 
     x = jnp.transpose(x, (0, 1, 2, 4, 3))
 
-    # flatten
+
     return x.reshape(bacth_size, height, width, num_channels)
 
 
 class InvertedResidual(nnx.Module):
     def __init__(self, inp: int, oup: int, stride: int, *, rngs: nnx.Rngs):
-        if not (1 <= stride <= 3):  # noqa: PLR2004
+        if not (1 <= stride <= 3):
             msg = "illegal stride value"
             raise ValueError(msg)
         self.stride = stride
 
         branch_features = oup // 2
         if (self.stride == 1) and (inp != branch_features << 1):
-            msg = f"Invalid combination of stride {stride},inp {inp} and oup {oup} values. If stride == 1 the inp should be equal to oup // 2 << 1"  # noqa: E501
+            msg = f"Invalid combination of stride {stride},inp {inp} and oup {oup} values. If stride == 1 the inp should be equal to oup // 2 << 1"
             raise ValueError(msg)
 
         if self.stride > 1:
@@ -100,7 +100,7 @@ class InvertedResidual(nnx.Module):
         )
 
     @staticmethod
-    def depthwise_conv(  # noqa: PLR0913
+    def depthwise_conv(
         i: int,
         o: int,
         kernel_size: tuple[int, int],
@@ -132,10 +132,10 @@ class ShuffleNetV2(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-        if len(stages_repeats) != 3:  # noqa: PLR2004
+        if len(stages_repeats) != 3:
             msg = "expected stages_repeats as list of 3 positive ints"
             raise ValueError(msg)
-        if len(stages_out_channels) != 5:  # noqa: PLR2004
+        if len(stages_out_channels) != 5:
             msg = "expected stages_out_channels as list of 5 positive ints"
             raise ValueError(msg)
         self._stage_out_channels = stages_out_channels
@@ -158,7 +158,7 @@ class ShuffleNetV2(nnx.Module):
         input_channels = output_channels
 
         self.maxpool = partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME")
-        # Static annotations for mypy
+
         self.stage2: nnx.Sequential
         self.stage3: nnx.Sequential
         self.stage4: nnx.Sequential

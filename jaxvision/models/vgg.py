@@ -134,8 +134,8 @@ def _vgg(cfg: str, *, batch_norm: bool, rngs: nnx.Rngs, **kwargs):
     return VGG(features=features, rngs=rngs, **kwargs)
 
 
-# --- VGG 模型工厂函数 (使用 partial 优化) ---
-# 修正: 确保 rngs 能够正确传递到 _vgg 函数
+
+
 def vgg11(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
     return _vgg("A", batch_norm=False, rngs=rngs, **kwargs)
 

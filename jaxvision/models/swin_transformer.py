@@ -21,7 +21,7 @@ __all__ = [
 
 
 def _patch_merging_pad(x: jax.Array) -> jax.Array:
-    H, W, _ = x.shape[1:]  # noqa: N806
+    H, W, _ = x.shape[1:]
     x = jnp.pad(
         x,
         (
@@ -31,11 +31,11 @@ def _patch_merging_pad(x: jax.Array) -> jax.Array:
             (0, 0),
         ),
     )
-    x0 = x[..., 0::2, 0::2, :]  # ... H/2 W/2 C
-    x1 = x[..., 1::2, 0::2, :]  # ... H/2 W/2 C
-    x2 = x[..., 0::2, 1::2, :]  # ... H/2 W/2 C
-    x3 = x[..., 1::2, 1::2, :]  # ... H/2 W/2 C
-    return jnp.concat([x0, x1, x2, x3], axis=-1)  # ... H/2 W/2 4*C
+    x0 = x[..., 0::2, 0::2, :]
+    x1 = x[..., 1::2, 0::2, :]
+    x2 = x[..., 0::2, 1::2, :]
+    x3 = x[..., 1::2, 1::2, :]
+    return jnp.concat([x0, x1, x2, x3], axis=-1)
 
 
 def _get_relative_position_bias(
@@ -43,8 +43,8 @@ def _get_relative_position_bias(
     relative_position_index: jax.Array,
     window_size: list[int],
 ) -> jax.Array:
-    N = window_size[0] * window_size[1]  # noqa: N806
-    relative_position_bias = relative_position_bias_table[relative_position_index]  # type: ignore[index]
+    N = window_size[0] * window_size[1]
+    relative_position_bias = relative_position_bias_table[relative_position_index]
     relative_position_bias = relative_position_bias.reshape(N, N, -1)
     return jnp.expand_dims(relative_position_bias.transpose(2, 0, 1), axis=0)
 
@@ -79,7 +79,7 @@ class PatchMerging(nnx.Module):
         """
         x = _patch_merging_pad(x)
         x = self.norm(x)
-        return self.reduction(x)  # ... H/2 W/2 2*C
+        return self.reduction(x)
 
 
 class PatchMergingV2(nnx.Module):
@@ -94,7 +94,7 @@ class PatchMergingV2(nnx.Module):
     def __init__(self, dim: int, norm_layer: Callable[..., nnx.Module] = nnx.LayerNorm, *, rngs: nnx.Rngs):
         self.dim = dim
         self.reduction = nnx.Linear(4 * dim, 2 * dim, use_bias=False, rngs=rngs)
-        self.norm = norm_layer(2 * dim, rngs=rngs)  # difference
+        self.norm = norm_layer(2 * dim, rngs=rngs)
 
     def __call__(self, x: jax.Array) -> jax.Array:
         """Args:
@@ -105,11 +105,11 @@ class PatchMergingV2(nnx.Module):
 
         """
         x = _patch_merging_pad(x)
-        x = self.reduction(x)  # ... H/2 W/2 2*C
+        x = self.reduction(x)
         return self.norm(x)
 
 
-def shifted_window_attention(  # noqa: PLR0913, PLR0915
+def shifted_window_attention(
     inputs: jax.Array,
     qkv_weight: jax.Array,
     proj_weight: jax.Array,
@@ -148,8 +148,8 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
         jax.Array[N, H, W, C]: The output tensor after shifted window attention.
 
     """
-    B, H, W, C = inputs.shape  # noqa: N806
-    # pad feature maps to multiples of window size
+    B, H, W, C = inputs.shape
+
     pad_r = (window_size[1] - W % window_size[1]) % window_size[1]
     pad_b = (window_size[0] - H % window_size[0]) % window_size[0]
     x = jnp.pad(
@@ -161,23 +161,23 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
             (0, 0),
         ),
     )
-    _, pad_H, pad_W, _ = x.shape  # noqa: N806
+    _, pad_H, pad_W, _ = x.shape
 
     shift_size = shift_size.copy()
-    # If window size is larger than feature size, there is no need to shift window
+
     if window_size[0] >= pad_H:
         shift_size[0] = 0
     if window_size[1] >= pad_W:
         shift_size[1] = 0
-    # cyclic shift
+
     if sum(shift_size) > 0:
         x = jnp.roll(x, shift=(-shift_size[0], -shift_size[1]), axis=(1, 2))
-    # partition windows
+
     num_windows = (pad_H // window_size[0]) * (pad_W // window_size[1])
     x = x.reshape(B, pad_H // window_size[0], window_size[0], pad_W // window_size[1], window_size[1], C)
-    x = x.transpose(0, 1, 3, 2, 4, 5).reshape(B * num_windows, window_size[0] * window_size[1], C)  # B*nW, Ws*Ws, C
+    x = x.transpose(0, 1, 3, 2, 4, 5).reshape(B * num_windows, window_size[0] * window_size[1], C)
 
-    # multi-head attention
+
     if logit_scale is not None and qkv_bias is not None:
         qkv_bias = jnp.copy(qkv_bias)
         length = qkv_bias.shape[0] // 3
@@ -186,7 +186,7 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
     qkv = qkv.reshape(x.shape[0], x.shape[1], 3, num_heads, C // num_heads).transpose(2, 0, 3, 1, 4)
     q, k, v = qkv[0], qkv[1], qkv[2]
     if logit_scale is not None:
-        # cosine attention
+
         attn = jnp.linalg.norm(q, axis=-1, keepdims=True) @ jnp.linalg.norm(k, axis=-1, keepdims=True).transpose(
             0,
             1,
@@ -198,11 +198,11 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
     else:
         q = q * (C // num_heads) ** -0.5
         attn = q @ k.transpose(0, 1, 3, 2)
-    # add relative position bias
+
     attn = attn + relative_position_bias
 
     if sum(shift_size) > 0:
-        # generate attention mask
+
         attn_mask = jnp.zeros((pad_H, pad_W))
         h_slices = ((0, -window_size[0]), (-window_size[0], -shift_size[0]), (-shift_size[0], None))
         w_slices = ((0, -window_size[1]), (-window_size[1], -shift_size[1]), (-shift_size[1], None))
@@ -226,22 +226,22 @@ def shifted_window_attention(  # noqa: PLR0913, PLR0915
     x = x @ proj_weight + proj_bias
     x = nnx.Dropout(rate=dropout, rngs=rngs, deterministic=deterministic)(x)
 
-    # reverse windows
+
     x = x.reshape(B, pad_H // window_size[0], pad_W // window_size[1], window_size[0], window_size[1], C)
     x = x.transpose(0, 1, 3, 2, 4, 5).reshape(B, pad_H, pad_W, C)
 
-    # reverse cyclic shift
+
     if sum(shift_size) > 0:
         x = jnp.roll(x, shift=(shift_size[0], shift_size[1]), axis=(1, 2))
 
-    # unpad features
+
     return x[:, :H, :W, :]
 
 
 class ShiftedWindowAttention(nnx.Module):
     """See :func:`shifted_window_attention`."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         dim: int,
         window_size: list[int],
@@ -255,7 +255,7 @@ class ShiftedWindowAttention(nnx.Module):
         deterministic: bool = False,
         rngs: nnx.Rngs,
     ):
-        if len(window_size) != 2 or len(shift_size) != 2:  # noqa: PLR2004
+        if len(window_size) != 2 or len(shift_size) != 2:
             msg = "window_size and shift_size must be of length 2"
             raise ValueError(msg)
         self.window_size = window_size
@@ -278,24 +278,24 @@ class ShiftedWindowAttention(nnx.Module):
         self.define_relative_position_index()
 
     def define_relative_position_index(self):
-        # get pair-wise relative position index for each token inside the window
+
         coords_h = jnp.arange(self.window_size[0])
         coords_w = jnp.arange(self.window_size[1])
-        coords = jnp.stack(jnp.meshgrid(coords_h, coords_w, indexing="ij"))  # 2, Wh, Ww
-        coords_flatten = coords.reshape(2, -1)  # 2, Wh*Ww
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
-        relative_coords = relative_coords.transpose(1, 2, 0)  # Wh*Ww, Wh*Ww, 2
-        relative_coords = relative_coords.at[:, :, 0].add(self.window_size[0] - 1)  # shift to start from 0
+        coords = jnp.stack(jnp.meshgrid(coords_h, coords_w, indexing="ij"))
+        coords_flatten = coords.reshape(2, -1)
+        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
+        relative_coords = relative_coords.transpose(1, 2, 0)
+        relative_coords = relative_coords.at[:, :, 0].add(self.window_size[0] - 1)
         relative_coords = relative_coords.at[:, :, 1].add(self.window_size[1] - 1)
         relative_coords = relative_coords.at[:, :, 0].mul(2 * self.window_size[1] - 1)
-        relative_position_index = relative_coords.sum(axis=-1).flatten()  # Wh*Ww*Wh*Ww
+        relative_position_index = relative_coords.sum(axis=-1).flatten()
         self.relative_position_index = relative_position_index
 
     def get_relative_position_bias(self) -> jax.Array:
         return _get_relative_position_bias(
             self.relative_position_bias_table.value,
             self.relative_position_index,
-            self.window_size,  # type: ignore[arg-type]
+            self.window_size,
         )
 
     def __call__(self, x: jax.Array) -> jax.Array:
@@ -327,7 +327,7 @@ class ShiftedWindowAttention(nnx.Module):
 class ShiftedWindowAttentionV2(ShiftedWindowAttention):
     """See :func:`shifted_window_attention_v2`."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         dim: int,
         window_size: list[int],
@@ -355,7 +355,7 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
         )
 
         self.logit_scale = nnx.Param(jnp.log(10 * jnp.ones((num_heads, 1, 1))))
-        # mlp to generate continuous relative position bias
+
         self.cpb_mlp = nnx.Sequential(
             nnx.Linear(2, 512, use_bias=True, rngs=rngs),
             nnx.relu,
@@ -366,14 +366,14 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             self.qkv.bias = self.qkv.bias.value.at[length : 2 * length].set(0.0)
 
     def define_relative_position_bias_table(self):
-        # get relative_coords_table
+
         relative_coords_h = jnp.arange(-(self.window_size[0] - 1), self.window_size[0], dtype=jnp.float32)
         relative_coords_w = jnp.arange(-(self.window_size[1] - 1), self.window_size[1], dtype=jnp.float32)
         relative_coords_table = jnp.stack(jnp.meshgrid(relative_coords_h, relative_coords_w, indexing="ij"))
         relative_coords_table = jnp.expand_dims(
             relative_coords_table.transpose(1, 2, 0),
             axis=0,
-        )  # 1, 2*Wh-1, 2*Ww-1, 2
+        )
 
         relative_coords_table = relative_coords_table.at[:, :, :, 0].set(
             relative_coords_table[:, :, :, 0] / (self.window_size[0] - 1),
@@ -382,14 +382,14 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             relative_coords_table[:, :, :, 1] / (self.window_size[1] - 1),
         )
 
-        relative_coords_table *= 8  # normalize to -8, 8
+        relative_coords_table *= 8
         relative_coords_table = jnp.sign(relative_coords_table) * jnp.log2(jnp.abs(relative_coords_table) + 1.0) / 3.0
         self.relative_coords_table = relative_coords_table
 
     def get_relative_position_bias(self) -> jax.Array:
         relative_position_bias = _get_relative_position_bias(
             self.cpb_mlp(self.relative_coords_table).reshape(-1, self.num_heads),
-            self.relative_position_index,  # type: ignore[arg-type]
+            self.relative_position_index,
             self.window_size,
         )
         return 16 * nnx.sigmoid(relative_position_bias)
@@ -438,7 +438,7 @@ class SwinTransformerBlock(nnx.Module):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         dim: int,
         num_heads: int,
@@ -495,7 +495,7 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         dim: int,
         num_heads: int,
@@ -525,8 +525,8 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
         )
 
     def __call__(self, x: jax.Array):
-        # Here is the difference, we apply norm after the attention in V2.
-        # In V1 we applied norm before the attention.
+
+
         x = x + self.stochastic_depth(self.norm1(self.attn(x)))
         return x + self.stochastic_depth(self.norm2(self.mlp(x)))
 
@@ -552,7 +552,7 @@ class SwinTransformer(nnx.Module):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         patch_size: list[int],
         embed_dim: int,
@@ -578,7 +578,7 @@ class SwinTransformer(nnx.Module):
             norm_layer = partial(nnx.LayerNorm, epsilon=1e-5)
 
         layers: list[nnx.Module] = []
-        # split image into non-overlapping patches
+
         layers.append(
             nnx.Sequential(
                 nnx.Conv(
@@ -594,12 +594,12 @@ class SwinTransformer(nnx.Module):
 
         total_stage_blocks = sum(depths)
         stage_block_id = 0
-        # build SwinTransformer blocks
+
         for i_stage in range(len(depths)):
             stage: list[nnx.Module] = []
             dim = embed_dim * 2**i_stage
             for i_layer in range(depths[i_stage]):
-                # adjust stochastic depth probability based on the depth of the stage block
+
                 sd_prob = stochastic_depth_prob * float(stage_block_id) / (total_stage_blocks - 1)
                 stage.append(
                     block(
@@ -617,7 +617,7 @@ class SwinTransformer(nnx.Module):
                 )
                 stage_block_id += 1
             layers.append(nnx.Sequential(*stage))
-            # add patch merging layer
+
             if i_stage < (len(depths) - 1):
                 layers.append(downsample_layer(dim, norm_layer, rngs=rngs))
         self.features = nnx.Sequential(*layers)
@@ -639,7 +639,7 @@ class SwinTransformer(nnx.Module):
         return self.head(x)
 
 
-def _swin_transformer(  # noqa: PLR0913
+def _swin_transformer(
     patch_size: list[int],
     embed_dim: int,
     depths: list[int],

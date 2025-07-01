@@ -37,8 +37,8 @@ def _make_block_input_shapes(input_size: tuple[int, int], n_blocks: int) -> list
 def _get_relative_position_index(height: int, width: int) -> jax.Array:
     coords_h = jnp.arange(height)
     coords_w = jnp.arange(width)
-    coords = jnp.stack(jnp.meshgrid(coords_h, coords_w, indexing="ij"))  # (2, H, W)
-    coords_flat = coords.reshape(coords.shape[0], -1)  # (2, H*W)
+    coords = jnp.stack(jnp.meshgrid(coords_h, coords_w, indexing="ij"))
+    coords_flat = coords.reshape(coords.shape[0], -1)
     relative_coords = coords_flat[:, :, None] - coords_flat[:, None, :]
     relative_coords = relative_coords.transpose(1, 2, 0)
     relative_coords_h = relative_coords[:, :, 0] + (height - 1)
@@ -61,7 +61,7 @@ class MBConv(nnx.Module):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         in_channels: int,
         out_channels: int,
@@ -80,7 +80,7 @@ class MBConv(nnx.Module):
         should_proj = stride != 1 or in_channels != out_channels
         if should_proj:
             proj = [nnx.Conv(in_channels, out_channels, kernel_size=(1, 1), strides=(1, 1), use_bias=True, rngs=rngs)]
-            if stride == 2:  # noqa: PLR2004
+            if stride == 2:
                 proj = [partial(nnx.avg_pool, window_shape=(3, 3), strides=(stride, stride), padding="SAME"), *proj]
             self.proj = nnx.Sequential(*proj)
         else:
@@ -202,8 +202,8 @@ class RelativePositionMultiHeadAttention(nnx.Module):
             jax.Array: Output tensor with expected layout of [B, G, P, D].
 
         """
-        B, G, P, D = x.shape  # noqa: N806
-        H, DH = self.n_heads, self.head_dim  # noqa: N806
+        B, G, P, D = x.shape
+        H, DH = self.n_heads, self.head_dim
 
         qkv = self.to_qkv(x)
         q, k, v = jnp.split(qkv, 3, axis=-1)
@@ -247,9 +247,9 @@ class WindowPartition(nnx.Module):
             : Output tensor with expected layout of [B, H/P, W/P, P*P, C].
 
         """
-        B, H, W, C = x.shape  # noqa: N806
-        P = p  # noqa: N806
-        # chunk up H and W dimension
+        B, H, W, C = x.shape
+        P = p
+
         x = x.reshape(B, H // P, P, W // P, P, C)
         x = x.transpose(0, 1, 3, 2, 4, 5)
         return x.reshape(B, (H // P) * (W // P), P * P, C)
@@ -269,14 +269,14 @@ class WindowDepartition(nnx.Module):
             jax.Array: Output tensor with expected layout of [B, H, W, C].
 
         """
-        B, G, PP, C = x.shape  # noqa: N806
-        P = p  # noqa: N806
-        HP, WP = h_partitions, w_partitions  # noqa: N806
-        # split P * P dimension into 2 P title dimensionsa
+        B, G, PP, C = x.shape
+        P = p
+        HP, WP = h_partitions, w_partitions
+
         x = x.reshape(B, HP, WP, P, P, C)
-        # B, HP, P, WP, P, C
+
         x = x.transpose(0, 1, 3, 2, 4, 5)
-        # reshape into B, H, W, C
+
         return x.reshape(B, HP * P, WP * P, C)
 
 
@@ -298,15 +298,15 @@ class PartitionAttentionLayer(nnx.Module):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         in_channels: int,
         head_dim: int,
-        # partitioning parameters
+
         partition_size: int,
         partition_type: str,
-        # grid size needs to be known at initialization time
-        # because we need to know hamy relative offsets there are in the grid
+
+
         grid_size: tuple[int, int],
         mlp_ratio: int,
         activation_layer: Callable[..., nnx.Module],
@@ -388,26 +388,26 @@ class MaxVitLayer(nnx.Module):
         partition_size (int): Size of the partitions.
         grid_size (tuple[int, int]): Size of the input feature grid.
 
-    """  # noqa: E501
+    """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
-        # conv parameters
+
         in_channels: int,
         out_channels: int,
         squeeze_ratio: float,
         expansion_ratio: float,
         stride: int,
-        # conv + transformer parameters
+
         norm_layer: Callable[..., nnx.Module],
         activation_layer: Callable[..., nnx.Module],
-        # transformer parameters
+
         head_dim: int,
         mlp_ratio: int,
         mlp_dropout: float,
         attention_dropout: float,
         p_stochastic_dropout: float,
-        # partitioning parameters
+
         partition_size: int,
         grid_size: tuple[int, int],
         *,
@@ -492,25 +492,25 @@ class MaxVitBlock(nnx.Module):
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
-        # conv parameters
+
         in_channels: int,
         out_channels: int,
         squeeze_ratio: float,
         expansion_ratio: float,
-        # conv + transformer parameters
+
         norm_layer: Callable[..., nnx.Module],
         activation_layer: Callable[..., nnx.Module],
-        # transformer parameters
+
         head_dim: int,
         mlp_ratio: int,
         mlp_dropout: float,
         attention_dropout: float,
-        # partitioning parameters
+
         partition_size: int,
         input_grid_size: tuple[int, int],
-        # number of layers
+
         n_layers: int,
         p_stochastic: list[float],
         *,
@@ -572,35 +572,35 @@ class MaxVit(nnx.Module):
         attention_dropout (float): Dropout probability for the attention layer. Default: 0.0.
         num_classes (int): Number of classes. Default: 1000.
 
-    """  # noqa: E501
+    """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
-        # input size parameters
+
         input_size: tuple[int, int],
-        # stem and task parameters
+
         stem_channels: int,
-        # partitioning parameters
+
         partition_size: int,
-        # block parameters
+
         block_channels: list[int],
         block_layers: list[int],
-        # attention head dimensions
+
         head_dim: int,
         stochastic_depth_prob: float,
-        # conv + transformer parameters
-        # norm_layer is applied only to the conv layers
-        # activation_layer is applied both to conv and transformer layers
+
+
+
         norm_layer: Callable[..., nnx.Module] | None = None,
         activation_layer: Callable[..., nnx.Module] = nnx.gelu,
-        # conv parameters
+
         squeeze_ratio: float = 0.25,
         expansion_ratio: float = 4,
-        # transformer parameters
+
         mlp_ratio: int = 4,
         mlp_dropout: float = 0.0,
         attention_dropout: float = 0.0,
-        # task parameters
+
         num_classes: int = 1000,
         *,
         rngs: nnx.Rngs,
@@ -613,14 +613,14 @@ class MaxVit(nnx.Module):
         for idx, block_input_size in enumerate(block_input_sizes):
             if block_input_size[0] % partition_size != 0 or block_input_size[1] % partition_size != 0:
                 msg = (
-                    f"Input size {block_input_size} of block {idx} is not divisible by partition size {partition_size}. "  # noqa: E501
+                    f"Input size {block_input_size} of block {idx} is not divisible by partition size {partition_size}. "
                     f"Consider changing the partition size or the input size.\n"
                     f"Current configuration yields the following block input sizes: {block_input_sizes}."
                 )
                 raise ValueError(
                     msg,
                 )
-                # stem
+
         self.stem = nnx.Sequential(
             Conv2dNormActivation(
                 input_channels,
@@ -643,18 +643,18 @@ class MaxVit(nnx.Module):
                 rngs=rngs,
             ),
         )
-        # account for stem stride
+
         input_size = _get_conv_output_shape(input_size, kernel_size=3, stride=2, padding=1)
         self.partition_size = partition_size
 
-        # blocks
+
         blocks = []
         in_channels = [stem_channels, *block_channels[:-1]]
         out_channels = block_channels
 
-        # precompute the stochastich depth probabilities from 0 to stochastic_depth_prob
-        # since we have N blocks with L layers, we will have N * L probabilities uniformly distributed
-        # over the range [0, stochastic_depth_prob]
+
+
+
         p_stochastic = np.linspace(0, stochastic_depth_prob, sum(block_layers)).tolist()
 
         p_idx = 0
@@ -678,7 +678,7 @@ class MaxVit(nnx.Module):
                     rngs=rngs,
                 ),
             )
-            input_size = blocks[-1].grid_size  # type: ignore[assignment]
+            input_size = blocks[-1].grid_size
             p_idx += num_layers
 
         self.blocks = blocks
@@ -713,19 +713,19 @@ class MaxVit(nnx.Module):
                         m.bias_init = nnx.initializers.zeros_init()
 
 
-def _maxvit(  # noqa: PLR0913
-    # stem parameters
+def _maxvit(
+
     stem_channels: int,
-    # block parameters
+
     block_channels: list[int],
     block_layers: list[int],
     stochastic_depth_prob: float,
-    # partitioning parameters
+
     partition_size: int,
-    # transformer parameters
+
     head_dim: int,
-    # Weights API
-    # kwargs,
+
+
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,
