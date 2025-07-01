@@ -1,37 +1,35 @@
-import csv  # Import the csv module for reading and writing CSV files
-from pathlib import Path  # # Import Path from pathlib for object-oriented filesystem paths
+import csv
+from pathlib import Path
 
-import albumentations as A  # Import Albumentations for image augmentations.  # noqa: N812
-import grain.python as grain  # Import Grain for building data pipelines
-import optax  # Import Optax for gradient processing and optimization
-from flax import nnx  # Import Flax NNX for neural network modules and utilities
-from tqdm import tqdm  # Import tqdm for displaying progress bars
+import albumentations as A
+import grain.python as grain
+import optax
+from flax import nnx
+from tqdm import tqdm
 
-# Import custom modules from the current project
-from datasets import create_datasets  # Function to create training and validation datasets
-from jaxvision.models.resnet import resnet18
-from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap  # Custom transforms
-from jaxvision.utils import create_model, print_dataset_info, save_model, set_seed  # Utility functions
+from dataset import create_datasets
+from jaxvision.models.vision_transformer import vit_b_16
+from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap
+from jaxvision.utils import create_model, print_dataset_info, save_model, set_seed
 
-# Configuration parameters for the training process
 params = {
-    "num_epochs": 300,  # Total number of training epochs
-    "batch_size": 680,  # Number of samples per batch
-    "target_size": 224,  # Target size (height and width) for image resizing
-    "learning_rate": 5e-4,  # Learning rate for the optimizer
-    "weight_decay": 1e-4,  # Weight decay (L2 regularization) to prevent overfitting
-    "seed": 42,  # Random seed for reproducibility
-    "num_workers": 64,  # Number of worker processes for data loading
-    "num_classes": 16,  # Number of output classes for classification
+    "num_epochs": 300,
+    "batch_size": 64,
+    "target_size": 224,
+    "learning_rate": 5e-4,
+    "weight_decay": 1e-4,
+    "seed": 42,
+    "num_workers": 64,
+    "num_classes": 6,
     "train_data_path": Path(
-        "/home/zhichenl489/JaxVision/Split_Augment_Mpox_Dermnet_16ClassesDataset/train",
-    ),  # Path to the training data directory
+        "/root/JaxVision/Original Images/Original Images/FOLDS/fold1/Train",
+    ),
     "val_data_path": Path(
-        "/home/zhichenl489/JaxVision/Split_Augment_Mpox_Dermnet_16ClassesDataset/test",
-    ),  # Path to the validation data directory
+        "/root/JaxVision/Original Images/Original Images/FOLDS/fold1/Valid",
+    ),
     "checkpoint_dir": Path(
-        "/home/zhichenl489/JaxVision/checkpoints",
-    ),  # Directory to save model checkpoints
+        "/root/JaxVision/checkpoints",
+    ),
 }
 
 
@@ -47,39 +45,36 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
 
     """
     transforms_list = [
-        # Resize all images to the target_size. This is a mandatory transformation.
         A.Resize(height=target_size, width=target_size, p=1.0),
     ]
 
     if is_training:
-        # Add training-specific augmentations if `is_training` is True.
         transforms_list.extend(
             [
-                A.HorizontalFlip(p=0.5),  # Randomly flip images horizontally with 50% probability
-                A.VerticalFlip(p=0.5),  # Randomly flip images vertically with 50% probability
-                A.Rotate(limit=30, p=0.5),  # Randomly rotate images by up to 30 degrees with 50% probability
-                A.ColorJitter(  # Randomly change the brightness, contrast, saturation, and hue
+                A.HorizontalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),
+                A.Rotate(limit=30, p=0.5),
+                A.ColorJitter(
                     brightness=0.2,
                     contrast=0.2,
                     saturation=0.2,
                     hue=0.05,
                     p=0.5,
                 ),
-                A.RandomResizedCrop(  # Crop a random part of the image and resize it
+                A.RandomResizedCrop(
                     size=(target_size, target_size),
-                    scale=(0.8, 1.0),  # Scale factor of the cropped area
-                    ratio=(0.75, 1.33),  # Aspect ratio of the cropped area
+                    scale=(0.8, 1.0),
+                    ratio=(0.75, 1.33),
                     p=0.5,
                 ),
             ],
         )
 
-    # Always apply normalization as the last step.
     transforms_list.append(
         A.Normalize(
-            mean=[0.485, 0.456, 0.406],  # ImageNet mean values for R, G, B channels
-            std=[0.229, 0.224, 0.225],  # ImageNet standard deviation values for R, G, B channels
-            max_pixel_value=255.0,  # Maximum pixel value in the input images (e.g., 255 for 8-bit images)
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+            max_pixel_value=255.0,
         ),
     )
 
@@ -98,49 +93,42 @@ def create_dataloaders(train_dataset, val_dataset, params):
         A tuple containing the training and validation Grain DataLoaders.
 
     """
-    # Create an `grain.IndexSampler` for the training data.
-    # This sampler determines the order in which samples are drawn from the dataset.
     train_sampler = grain.IndexSampler(
-        len(train_dataset),  # The total number of samples in the data source.
-        shuffle=True,  # Shuffle the data to randomize the order of samples for training.
-        seed=params["seed"],  # Set a seed for reproducibility of shuffling.
-        shard_options=grain.ShardByJaxProcess(),  # No sharding is applied since this is a single-device setup.
-        num_epochs=8,  # Iterate over the dataset for one epoch per call to the data loader.
+        len(train_dataset),
+        shuffle=True,
+        seed=params["seed"],
+        shard_options=grain.ShardByJaxProcess(),
+        num_epochs=8,
     )
-    # Create an `grain.IndexSampler` for the validation data.
+
     val_sampler = grain.IndexSampler(
         len(val_dataset),
-        shuffle=False,  # Do not shuffle validation data to ensure consistent evaluation.
+        shuffle=False,
         seed=params["seed"],
         shard_options=grain.ShardByJaxProcess(),
         num_epochs=1,
     )
 
-    # Create the training DataLoader.
     train_loader = grain.DataLoader(
-        data_source=train_dataset,  # The dataset to load data from.
-        sampler=train_sampler,  # The sampler to determine how to access the data.
-        worker_count=params["num_workers"],  # Number of child processes launched to parallelize data transformations.
-        worker_buffer_size=4,  # Count of output batches to produce in advance per worker to reduce pipeline stalls.
+        data_source=train_dataset,
+        sampler=train_sampler,
+        worker_count=params["num_workers"],
+        worker_buffer_size=4,
         operations=[
-            # Custom operation to load images using OpenCV.
             OpenCVLoadImageMap(),
-            # Apply Albumentations transformations.
             AlbumentationsTransform(
-                # For training data, apply training-specific augmentations.
                 create_transforms(
                     target_size=params["target_size"],
-                    is_training=True,  # IMPORTANT: Use is_training=True for the training loader
+                    is_training=True,
                 ),
             ),
-            # Batch the samples together.
             grain.Batch(
-                params["batch_size"],  # The desired batch size.
-                drop_remainder=True,  # Drop the last batch if its size is less than `batch_size`.
+                params["batch_size"],
+                drop_remainder=True,
             ),
         ],
     )
-    # Create the validation DataLoader.
+
     val_loader = grain.DataLoader(
         data_source=val_dataset,
         sampler=val_sampler,
@@ -149,13 +137,12 @@ def create_dataloaders(train_dataset, val_dataset, params):
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
-                # For validation data, apply only resizing and normalization (no augmentations).
                 create_transforms(
                     target_size=params["target_size"],
-                    is_training=False,  # IMPORTANT: Use is_training=False for the validation loader
+                    is_training=False,
                 ),
             ),
-            grain.Batch(params["batch_size"]),  # Batch the samples.
+            grain.Batch(params["batch_size"]),
         ],
     )
 
@@ -175,8 +162,8 @@ def create_optimizer(model, learining_rate: float, weight_decay: float) -> nnx.O
 
     """
     return nnx.Optimizer(
-        model,  # The model whose parameters will be optimized
-        optax.adamw(  # Using the AdamW optimizer, which combines Adam with weight decay
+        model,
+        optax.adamw(
             learning_rate=learining_rate,
             weight_decay=weight_decay,
         ),
@@ -194,15 +181,14 @@ def loss_fn(model, batch):
         A tuple containing the calculated loss and the model's logits.
 
     """
-    images, labels = batch  # Unpack images and labels from the batch
-    logits = model(images)  # Get raw predictions (logits) from the model
-    # Calculate softmax cross-entropy loss with integer labels.
-    # The .mean() calculates the average loss over the batch.
+    images, labels = batch
+    logits = model(images)
+
     loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
-    return loss, logits  # Return both loss and logits for potential use in metrics
+    return loss, logits
 
 
-@nnx.jit  # JIT compile this function for performance.
+@nnx.jit
 def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
     """Performs a single training step, including forward pass, loss calculation,
     gradient computation, and parameter update.
@@ -214,19 +200,15 @@ def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch)
         batch: A tuple containing (images, labels) for the current training batch.
 
     """
-    # Define a function that computes the loss and its gradient with respect to model parameters.
-    # `has_aux=True` indicates that `loss_fn` returns auxiliary data (logits in this case)
-    # along with the loss, which should not be differentiated.
-    # Compute the loss, logits, and gradients.
     grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
     (loss, logits), grads = grad_fn(model, batch)
-    # Update the training metrics with the current batch's loss, logits, and labels.
+
     metrics.update(loss=loss, logits=logits, labels=batch[1])
-    # Apply the computed gradients to update the model's parameters using the optimizer.
+
     optimizer.update(grads)
 
 
-@nnx.jit  # JIT compile this function for performance.
+@nnx.jit
 def eval_step(model, metrics: nnx.MultiMetric, batch):
     """Performs a single evaluation step, including forward pass and loss calculation.
     No gradient computation or parameter updates occur here.
@@ -237,109 +219,93 @@ def eval_step(model, metrics: nnx.MultiMetric, batch):
         batch: A tuple containing (images, labels) for the current evaluation batch.
 
     """
-    # Calculate the loss and logits for the current batch.
     loss, logits = loss_fn(model, batch)
-    # Update the evaluation metrics with the current batch's loss, logits, and labels.
+
     metrics.update(loss=loss, logits=logits, labels=batch[1])
 
 
 def main():
     """Main function to orchestrate the training and validation process of the model."""
-    set_seed(params["seed"])  # Set the random seed for reproducibility
+    set_seed(params["seed"])
 
     print(f"📋 Configuration: {params}")
 
-    # Create datasets and dataloaders
     print("\n📂 Loading datasets...")
-    # Call the custom function to create training and validation datasets
+
     train_dataset, val_dataset = create_datasets(params)
-    # Create data loaders from the datasets
+
     train_loader, val_loader = create_dataloaders(train_dataset, val_dataset, params)
 
-    print_dataset_info(train_dataset, val_dataset)  # Print information about the datasets
+    print_dataset_info(train_dataset, val_dataset)
 
-    # Create model and optimizer
     print("\n🏗️ Creating model and optimizer...")
-    # Create the ResNet18 model with specified seed and number of classes
-    model = create_model(resnet18, params["seed"], params["num_classes"])
 
-    # Create the optimizer
+    model = create_model(vit_b_16, params["seed"], params["num_classes"])
+
     optimizer = create_optimizer(
         model,
         learining_rate=params["learning_rate"],
         weight_decay=params["weight_decay"],
     )
 
-    # Initialize metrics for training and validation.
-    # nnx.MultiMetric allows tracking multiple metrics simultaneously.
     train_metrics = nnx.MultiMetric(
-        accuracy=nnx.metrics.Accuracy(),  # Track accuracy for training
-        loss=nnx.metrics.Average("loss"),  # Track average loss for training
+        accuracy=nnx.metrics.Accuracy(),
+        loss=nnx.metrics.Average("loss"),
     )
     val_metrics = nnx.MultiMetric(
-        accuracy=nnx.metrics.Accuracy(),  # Track accuracy for validation
-        loss=nnx.metrics.Average("loss"),  # Track average loss for validation
+        accuracy=nnx.metrics.Accuracy(),
+        loss=nnx.metrics.Average("loss"),
     )
 
-    # Initialize best accuracy for saving the best model
     best_acc = -1.0
 
-    # Training loop setup
-    # Define the path for the training log CSV file
     csv_path = params["checkpoint_dir"] / "train_log.csv"
-    # Open the CSV file in write mode and write the header row
+
     with Path.open(csv_path, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
-    # Create cached partial functions for `train_step` and `eval_step`.
-    # `nnx.cached_partial` can optimize JIT compilation for functions with fixed arguments.
     cached_train_step = nnx.cached_partial(train_step, model, optimizer, train_metrics)
     cached_eval_step = nnx.cached_partial(eval_step, model, val_metrics)
 
     print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
 
-    # Main training loop
     for epoch in range(params["num_epochs"]):
-        print(f"\n{'=' * 60}")  # Print a separator line
-        print(f"Epoch {epoch + 1}/{params['num_epochs']}")  # Print current epoch number
-        print(f"{'=' * 60}")  # Print another separator line
+        print(f"\n{'=' * 60}")
+        print(f"Epoch {epoch + 1}/{params['num_epochs']}")
+        print(f"{'=' * 60}")
 
-        # --- Training Phase ---
-        model.train()  # Set the model to training mode (e.g., enable dropout if present)
-        # Iterate over the training data loader with a progress bar
+        model.train()
+
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
-            cached_train_step(batch)  # Perform a single training step
-        train_result = train_metrics.compute()  # Compute final training metrics for the epoch
-        train_metrics.reset()  # Reset training metrics for the next epoch
+            cached_train_step(batch)
+        train_result = train_metrics.compute()
+        train_metrics.reset()
         print(
             f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
-        )  # Print training results
+        )
 
-        # --- Validation Phase ---
-        model.eval()  # Set the model to evaluation mode (e.g., disable dropout)
-        # Iterate over the validation data loader with a progress bar
+        model.eval()
+
         for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
-            cached_eval_step(batch)  # Perform a single evaluation step
-        val_result = val_metrics.compute()  # Compute final validation metrics for the epoch
-        val_metrics.reset()  # Reset validation metrics for the next epoch
+            cached_eval_step(batch)
+        val_result = val_metrics.compute()
+        val_metrics.reset()
         print(
             f"📊 Val Loss: {val_result['loss']:.6f}, Acc: {val_result['accuracy'] * 100:.6f}%",
-        )  # Print validation results
+        )
 
-        # Save model if validation accuracy improved
-        current_acc = float(val_result["accuracy"])  # Get current validation accuracy
+        current_acc = float(val_result["accuracy"])
         if current_acc > best_acc:
-            best_acc = current_acc  # Update best accuracy
-            # Define checkpoint path including epoch and accuracy
+            best_acc = current_acc
+
             checkpoint_path = params["checkpoint_dir"] / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
-            save_model(model, checkpoint_path)  # Save the model state
+            save_model(model, checkpoint_path)
             print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
 
-        # Log results to CSV
-        with csv_path.open(mode="a", newline="") as f:  # Open CSV in append mode
+        with csv_path.open(mode="a", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(  # Write epoch results
+            writer.writerow(
                 [
                     epoch + 1,
                     train_result["loss"],
@@ -353,4 +319,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()  # Run the main training function when the script is executed
+    main()
