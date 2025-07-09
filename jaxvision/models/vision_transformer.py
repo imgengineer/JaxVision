@@ -32,7 +32,7 @@ class VisionTransformer(nnx.Module):
         hidden_size: int = 768,
         dropout_rate: float = 0.1,
         *,
-        rngs: nnx.Rngs = nnx.Rngs(0),
+        rngs: nnx.Rngs,
     ):
         # Calculate the number of patches generated from the image.
         n_patches = (img_size // patch_size) ** 2
@@ -120,7 +120,7 @@ class TransformerEncoder(nnx.Module):
         num_heads: int,
         dropout_rate: float = 0.0,
         *,
-        rngs: nnx.Rngs = nnx.Rngs(0),
+        rngs: nnx.Rngs,
     ):
         # First layer normalization using `flax.nnx.LayerNorm`
         # before we apply Multi-Head Attention.

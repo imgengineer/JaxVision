@@ -21,13 +21,13 @@ __all__ = [
 
 
 def _patch_merging_pad(x: jax.Array) -> jax.Array:
-    H, W, _ = x.shape[1:]
+    h, w, _ = x.shape[1:]
     x = jnp.pad(
         x,
         (
             (0, 0),
-            (0, H % 2),
-            (0, W % 2),
+            (0, h % 2),
+            (0, w % 2),
             (0, 0),
         ),
     )
@@ -43,9 +43,9 @@ def _get_relative_position_bias(
     relative_position_index: jax.Array,
     window_size: list[int],
 ) -> jax.Array:
-    N = window_size[0] * window_size[1]
+    n = window_size[0] * window_size[1]
     relative_position_bias = relative_position_bias_table[relative_position_index]
-    relative_position_bias = relative_position_bias.reshape(N, N, -1)
+    relative_position_bias = relative_position_bias.reshape(n, n, -1)
     return jnp.expand_dims(relative_position_bias.transpose(2, 0, 1), axis=0)
 
 
@@ -148,10 +148,10 @@ def shifted_window_attention(
         jax.Array[N, H, W, C]: The output tensor after shifted window attention.
 
     """
-    B, H, W, C = inputs.shape
+    b, h_orig, w_orig, c = inputs.shape
 
-    pad_r = (window_size[1] - W % window_size[1]) % window_size[1]
-    pad_b = (window_size[0] - H % window_size[0]) % window_size[0]
+    pad_r = (window_size[1] - w_orig % window_size[1]) % window_size[1]
+    pad_b = (window_size[0] - h_orig % window_size[0]) % window_size[0]
     x = jnp.pad(
         inputs,
         (
@@ -161,57 +161,52 @@ def shifted_window_attention(
             (0, 0),
         ),
     )
-    _, pad_H, pad_W, _ = x.shape
+    _, pad_h, pad_w, _ = x.shape
 
     shift_size = shift_size.copy()
 
-    if window_size[0] >= pad_H:
+    if window_size[0] >= pad_h:
         shift_size[0] = 0
-    if window_size[1] >= pad_W:
+    if window_size[1] >= pad_w:
         shift_size[1] = 0
 
     if sum(shift_size) > 0:
         x = jnp.roll(x, shift=(-shift_size[0], -shift_size[1]), axis=(1, 2))
 
-    num_windows = (pad_H // window_size[0]) * (pad_W // window_size[1])
-    x = x.reshape(B, pad_H // window_size[0], window_size[0], pad_W // window_size[1], window_size[1], C)
-    x = x.transpose(0, 1, 3, 2, 4, 5).reshape(B * num_windows, window_size[0] * window_size[1], C)
+    num_windows = (pad_h // window_size[0]) * (pad_w // window_size[1])
+    x = x.reshape(b, pad_h // window_size[0], window_size[0], pad_w // window_size[1], window_size[1], c)
+    x = x.transpose(0, 1, 3, 2, 4, 5).reshape(b * num_windows, window_size[0] * window_size[1], c)
 
-
+    # multi-head attention
     if logit_scale is not None and qkv_bias is not None:
         qkv_bias = jnp.copy(qkv_bias)
-        length = qkv_bias.shape[0] // 3
+        length = qkv_bias.size // 3
         qkv_bias = qkv_bias.at[length : 2 * length].set(0.0)
     qkv = x @ qkv_weight + qkv_bias
-    qkv = qkv.reshape(x.shape[0], x.shape[1], 3, num_heads, C // num_heads).transpose(2, 0, 3, 1, 4)
+    qkv = qkv.reshape(x.shape[0], x.shape[1], 3, num_heads, c // num_heads).transpose(2, 0, 3, 1, 4)
     q, k, v = qkv[0], qkv[1], qkv[2]
     if logit_scale is not None:
-
-        attn = jnp.linalg.norm(q, axis=-1, keepdims=True) @ jnp.linalg.norm(k, axis=-1, keepdims=True).transpose(
-            0,
-            1,
-            3,
-            2,
-        )
-        logit_scale = jnp.exp(jnp.clip(logit_scale, a_max=jnp.log(100.0)))
+        attn = jnp.linalg.norm(q, axis=-1, keepdims=True) @ jnp.linalg.norm(k, axis=-1, keepdims=True).transpose(0, 1, 3, 2)
+        logit_scale = jnp.exp(jnp.clip(logit_scale, max=jnp.log(100.0)))
         attn = attn * logit_scale
     else:
-        q = q * (C // num_heads) ** -0.5
-        attn = q @ k.transpose(0, 1, 3, 2)
+        q = q * (c // num_heads) ** -0.5
+        attn = q @ (k.transpose(0, 1, 3, 2))
 
+    # add relative position bias
     attn = attn + relative_position_bias
 
     if sum(shift_size) > 0:
-
-        attn_mask = jnp.zeros((pad_H, pad_W))
-        h_slices = ((0, -window_size[0]), (-window_size[0], -shift_size[0]), (-shift_size[0], None))
-        w_slices = ((0, -window_size[1]), (-window_size[1], -shift_size[1]), (-shift_size[1], None))
+        # generate attention mask
+        attn_mask = jnp.zeros((pad_h, pad_w))
+        h_slices_for_mask = ((0, -window_size[0]), (-window_size[0], -shift_size[0]), (-shift_size[0], None))
+        w_slices_for_mask = ((0, -window_size[1]), (-window_size[1], -shift_size[1]), (-shift_size[1], None))
         count = 0
-        for h in h_slices:
-            for w in w_slices:
-                attn_mask = attn_mask.at[h[0] : h[1], w[0] : w[1]].set(count)
+        for hs in h_slices_for_mask:
+            for ws in w_slices_for_mask:
+                attn_mask = attn_mask.at[hs[0] : hs[1], ws[0] : ws[1]].set(count)
                 count += 1
-        attn_mask = attn_mask.reshape(pad_H // window_size[0], window_size[0], pad_W // window_size[1], window_size[1])
+        attn_mask = attn_mask.reshape(pad_h // window_size[0], window_size[0], pad_w // window_size[1], window_size[1])
         attn_mask = attn_mask.transpose(0, 2, 1, 3).reshape(num_windows, window_size[0] * window_size[1])
         attn_mask = jnp.expand_dims(attn_mask, axis=1) - jnp.expand_dims(attn_mask, axis=2)
         attn_mask = jnp.where(attn_mask != 0, (-100.0), 0.0)
@@ -222,20 +217,18 @@ def shifted_window_attention(
     attn = nnx.softmax(attn, axis=-1)
     attn = nnx.Dropout(rate=attention_dropout, rngs=rngs, deterministic=deterministic)(attn)
 
-    x = (attn @ v).transpose(0, 2, 1, 3).reshape(x.shape[0], x.shape[1], C)
+    x = (attn @ v).transpose(0, 2, 1, 3).reshape(x.shape[0], x.shape[1], c)
     x = x @ proj_weight + proj_bias
     x = nnx.Dropout(rate=dropout, rngs=rngs, deterministic=deterministic)(x)
 
+    x = x.reshape(b, pad_h // window_size[0], pad_w // window_size[1], window_size[0], window_size[1], c)
+    x = x.transpose(0, 1, 3, 2, 4, 5).reshape(b, pad_h, pad_w, c)
 
-    x = x.reshape(B, pad_H // window_size[0], pad_W // window_size[1], window_size[0], window_size[1], C)
-    x = x.transpose(0, 1, 3, 2, 4, 5).reshape(B, pad_H, pad_W, C)
-
-
+    # reverse cyclic shift
     if sum(shift_size) > 0:
         x = jnp.roll(x, shift=(shift_size[0], shift_size[1]), axis=(1, 2))
 
-
-    return x[:, :H, :W, :]
+    return x[:, :h_orig, :w_orig, :]
 
 
 class ShiftedWindowAttention(nnx.Module):
@@ -269,16 +262,20 @@ class ShiftedWindowAttention(nnx.Module):
         self.qkv = nnx.Linear(dim, dim * 3, use_bias=qkv_bias, rngs=rngs)
         self.proj = nnx.Linear(dim, dim, use_bias=proj_bias, rngs=rngs)
 
-        self.relative_position_bias_table = nnx.Param(
-            nnx.initializers.truncated_normal(stddev=0.02, lower=-2, upper=2)(
-                rngs.params(),
-                ((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), self.num_heads),
-            ),
-        )
+        self.define_relative_position_bias_table()
         self.define_relative_position_index()
 
-    def define_relative_position_index(self):
+    def define_relative_position_bias_table(self):
+        # define a parameter table of relative position bias
+        self.relative_position_bias_table = nnx.Param(
+            jnp.zeros((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1)),
+        )
+        self.relative_position_bias_table.values = nnx.initializers.truncated_normal(stddev=0.02)(
+            self.rngs.params(),
+            shape=self.relative_position_bias_table.value.shape,
+        )
 
+    def define_relative_position_index(self):
         coords_h = jnp.arange(self.window_size[0])
         coords_w = jnp.arange(self.window_size[1])
         coords = jnp.stack(jnp.meshgrid(coords_h, coords_w, indexing="ij"))
@@ -293,7 +290,7 @@ class ShiftedWindowAttention(nnx.Module):
 
     def get_relative_position_bias(self) -> jax.Array:
         return _get_relative_position_bias(
-            self.relative_position_bias_table.value,
+            self.relative_position_bias_table,
             self.relative_position_index,
             self.window_size,
         )
@@ -317,8 +314,8 @@ class ShiftedWindowAttention(nnx.Module):
             shift_size=self.shift_size,
             attention_dropout=self.attention_dropout,
             dropout=self.dropout,
-            qkv_bias=self.qkv.bias,
-            proj_bias=self.proj.bias,
+            qkv_bias=self.qkv.bias.value,
+            proj_bias=self.proj.bias.value,
             deterministic=self.deterministic,
             rngs=self.rngs,
         )
@@ -362,11 +359,10 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             nnx.Linear(512, num_heads, use_bias=False, rngs=rngs),
         )
         if qkv_bias:
-            length = self.qkv.bias.value.shape[0] // 3
-            self.qkv.bias = self.qkv.bias.value.at[length : 2 * length].set(0.0)
+            length = self.qkv.bias.value.size // 3
+            self.qkv.bias.value = self.qkv.bias.value.at[length : 2 * length].set(0.0)
 
     def define_relative_position_bias_table(self):
-
         relative_coords_h = jnp.arange(-(self.window_size[0] - 1), self.window_size[0], dtype=jnp.float32)
         relative_coords_w = jnp.arange(-(self.window_size[1] - 1), self.window_size[1], dtype=jnp.float32)
         relative_coords_table = jnp.stack(jnp.meshgrid(relative_coords_h, relative_coords_w, indexing="ij"))
@@ -413,8 +409,8 @@ class ShiftedWindowAttentionV2(ShiftedWindowAttention):
             shift_size=self.shift_size,
             attention_dropout=self.attention_dropout,
             dropout=self.dropout,
-            qkv_bias=self.qkv.bias,
-            proj_bias=self.proj.bias,
+            qkv_bias=self.qkv.bias.value,
+            proj_bias=self.proj.bias.value,
             logit_scale=self.logit_scale.value,
             deterministic=self.deterministic,
             rngs=self.rngs,
@@ -467,7 +463,7 @@ class SwinTransformerBlock(nnx.Module):
         self.norm2 = norm_layer(dim, rngs=rngs)
         self.mlp = MLP(dim, [int(dim * mlp_ratio), dim], activation_layer=nnx.gelu, dropout=dropout, rngs=rngs)
 
-        for m in self.mlp.iter_modules():
+        for _, m in self.mlp.iter_modules():
             if isinstance(m, nnx.Linear):
                 m.kernel_init = nnx.initializers.xavier_uniform()
                 if m.bias is not None:
@@ -525,8 +521,6 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
         )
 
     def __call__(self, x: jax.Array):
-
-
         x = x + self.stochastic_depth(self.norm1(self.attn(x)))
         return x + self.stochastic_depth(self.norm2(self.mlp(x)))
 
@@ -599,7 +593,6 @@ class SwinTransformer(nnx.Module):
             stage: list[nnx.Module] = []
             dim = embed_dim * 2**i_stage
             for i_layer in range(depths[i_stage]):
-
                 sd_prob = stochastic_depth_prob * float(stage_block_id) / (total_stage_blocks - 1)
                 stage.append(
                     block(

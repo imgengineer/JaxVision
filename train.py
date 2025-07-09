@@ -1,20 +1,26 @@
 import csv
+from functools import partial
 from pathlib import Path
 
-import albumentations as A
+import albumentations as A  # noqa: N812
 import grain.python as grain
+import jax
 import optax
 from flax import nnx
 from tqdm import tqdm
 
 from dataset import create_datasets
+
+# from jaxvision.models.resnet import resnet50
 from jaxvision.models.vision_transformer import vit_b_16
+
+# from jaxvision.models.swin_transformer import swin_v2_t
 from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap
 from jaxvision.utils import create_model, print_dataset_info, save_model, set_seed
 
 params = {
     "num_epochs": 300,
-    "batch_size": 64,
+    "batch_size": 128,
     "target_size": 224,
     "learning_rate": 5e-4,
     "weight_decay": 1e-4,
@@ -98,7 +104,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         shuffle=True,
         seed=params["seed"],
         shard_options=grain.ShardByJaxProcess(),
-        num_epochs=8,
+        num_epochs=200,
     )
 
     val_sampler = grain.IndexSampler(
@@ -149,7 +155,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
     return train_loader, val_loader
 
 
-def create_optimizer(model, learining_rate: float, weight_decay: float) -> nnx.Optimizer:
+def create_optimizer(model, learning_rate: float, weight_decay: float) -> nnx.Optimizer:
     """Create an Optax optimizer for the given model.
 
     Args:
@@ -161,12 +167,16 @@ def create_optimizer(model, learining_rate: float, weight_decay: float) -> nnx.O
         An `nnx.Optimizer` instance.
 
     """
-    return nnx.Optimizer(
-        model,
+    tx = optax.chain(
+        optax.clip_by_global_norm(1.0),
         optax.adamw(
-            learning_rate=learining_rate,
+            learning_rate=learning_rate,
             weight_decay=weight_decay,
         ),
+    )
+    return nnx.Optimizer(
+        model,
+        tx,
     )
 
 
@@ -181,15 +191,32 @@ def loss_fn(model, batch):
         A tuple containing the calculated loss and the model's logits.
 
     """
-    images, labels = batch
-    logits = model(images)
-
-    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
+    logits = model(batch[0])
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch[1]).mean()
     return loss, logits
 
 
+@partial(jax.jit, donate_argnames="state")
+def train_step_jax(graphdef, state, batch):
+    model, optimizer, metrics = nnx.merge(graphdef, state)
+    grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
+    (loss, logits), grads = grad_fn(model, batch)
+    optimizer.update(grads)
+    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    state = nnx.state((model, optimizer, metrics))
+    return loss, state
+
+
+@partial(jax.jit, donate_argnames="state")
+def eval_step_jax(graphdef, state, batch):
+    model, optimizer, metrics = nnx.merge(graphdef, state)
+    loss, logits = loss_fn(model, batch)
+    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    return nnx.state((model, optimizer, metrics))
+
+
 @nnx.jit
-def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
+def train_step_nnx(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
     """Performs a single training step, including forward pass, loss calculation,
     gradient computation, and parameter update.
 
@@ -209,7 +236,7 @@ def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch)
 
 
 @nnx.jit
-def eval_step(model, metrics: nnx.MultiMetric, batch):
+def eval_step_nnx(model, metrics: nnx.MultiMetric, batch):
     """Performs a single evaluation step, including forward pass and loss calculation.
     No gradient computation or parameter updates occur here.
 
@@ -244,15 +271,11 @@ def main():
 
     optimizer = create_optimizer(
         model,
-        learining_rate=params["learning_rate"],
+        learning_rate=params["learning_rate"],
         weight_decay=params["weight_decay"],
     )
 
-    train_metrics = nnx.MultiMetric(
-        accuracy=nnx.metrics.Accuracy(),
-        loss=nnx.metrics.Average("loss"),
-    )
-    val_metrics = nnx.MultiMetric(
+    metrics = nnx.MultiMetric(
         accuracy=nnx.metrics.Accuracy(),
         loss=nnx.metrics.Average("loss"),
     )
@@ -265,11 +288,9 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
-    cached_train_step = nnx.cached_partial(train_step, model, optimizer, train_metrics)
-    cached_eval_step = nnx.cached_partial(eval_step, model, val_metrics)
-
     print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
 
+    graphdef, state = nnx.split((model, optimizer, metrics))
     for epoch in range(params["num_epochs"]):
         print(f"\n{'=' * 60}")
         print(f"Epoch {epoch + 1}/{params['num_epochs']}")
@@ -278,19 +299,22 @@ def main():
         model.train()
 
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
-            cached_train_step(batch)
-        train_result = train_metrics.compute()
-        train_metrics.reset()
+            loss, state = train_step_jax(graphdef, state, batch)
+        model, optimizer, metrics = nnx.merge(graphdef, state)
+        train_result = metrics.compute()
+        metrics.reset()
         print(
             f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
         )
 
         model.eval()
-
+        state = nnx.state((model, optimizer, metrics))
         for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
-            cached_eval_step(batch)
-        val_result = val_metrics.compute()
-        val_metrics.reset()
+            state = eval_step_jax(graphdef, state, batch)
+        model, optimizer, metrics = nnx.merge(graphdef, state)
+        val_result = metrics.compute()
+        metrics.reset()
+        state = nnx.state((model, optimizer, metrics))
         print(
             f"📊 Val Loss: {val_result['loss']:.6f}, Acc: {val_result['accuracy'] * 100:.6f}%",
         )

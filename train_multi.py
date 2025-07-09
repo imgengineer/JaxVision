@@ -1,3 +1,6 @@
+import os
+
+os.environ["PJRT_DEVICE"] = "TPU"
 import csv
 from pathlib import Path
 
@@ -48,12 +51,10 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
 
     """
     transforms_list = [
-
         A.Resize(height=target_size, width=target_size, p=1.0),
     ]
 
     if is_training:
-
         transforms_list.extend(
             [
                 A.HorizontalFlip(p=0.5),
@@ -74,7 +75,6 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
                 ),
             ],
         )
-
 
     transforms_list.append(
         A.Normalize(
@@ -115,24 +115,19 @@ def create_dataloaders(train_dataset, val_dataset, params):
         num_epochs=1,
     )
 
-
     train_loader = grain.DataLoader(
         data_source=train_dataset,
         sampler=train_sampler,
         worker_count=64,
         worker_buffer_size=4,
         operations=[
-
             OpenCVLoadImageMap(),
-
             AlbumentationsTransform(
-
                 create_transforms(
                     target_size=params["target_size"],
                     is_training=True,
                 ),
             ),
-
             grain.Batch(
                 params["batch_size"],
                 drop_remainder=True,
@@ -148,7 +143,6 @@ def create_dataloaders(train_dataset, val_dataset, params):
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
-
                 create_transforms(
                     target_size=params["target_size"],
                     is_training=False,
@@ -177,7 +171,6 @@ def create_optimizer(model, learining_rate: float, weight_decay: float) -> nnx.O
 def loss_fn(model, batch):
     images, labels = batch
     logits = model(images)
-
 
     loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
     return loss, logits
@@ -225,7 +218,6 @@ def main():
 
     print(f"📋 Configuration: {params}")
 
-
     print("\n📂 Loading datasets...")
 
     train_dataset, val_dataset = create_datasets(params)
@@ -233,7 +225,6 @@ def main():
     train_loader, val_loader = create_dataloaders(train_dataset, val_dataset, params)
 
     print_dataset_info(train_dataset, val_dataset)
-
 
     print("\n🏗️ Creating model and optimizer...")
 
@@ -251,8 +242,8 @@ def main():
             )
             m.bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P("model")))
         elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
-            m.scale_init = nnx.with_partitioning(nnx.initializers.constant(1), NamedSharding(mesh, P(None, "model")))
-            m.bias_init = nnx.with_partitioning(nnx.initializers.constant(0), NamedSharding(mesh, P(None, "model")))
+            m.scale_init = nnx.with_partitioning(nnx.initializers.constant(1), NamedSharding(mesh, P("model")))
+            m.bias_init = nnx.with_partitioning(nnx.initializers.constant(0), NamedSharding(mesh, P("model")))
         elif isinstance(m, nnx.Linear):
             m.kernel_init = nnx.with_partitioning(
                 nnx.initializers.xavier_uniform(),
@@ -266,8 +257,6 @@ def main():
         weight_decay=params["weight_decay"],
     )
 
-
-
     train_metrics = nnx.MultiMetric(
         accuracy=nnx.metrics.Accuracy(),
         loss=nnx.metrics.Average("loss"),
@@ -277,20 +266,13 @@ def main():
         loss=nnx.metrics.Average("loss"),
     )
 
-
-
-
-
     csv_path = params["checkpoint_dir"] / "train_log.csv"
 
     with Path.open(csv_path, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
-
-
     print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
-
 
     cached_train_step = nnx.cached_partial(train_step, model, optimizer, train_metrics)
     nnx.cached_partial(eval_step, model, val_metrics)
@@ -298,7 +280,6 @@ def main():
         print(f"\n{'=' * 60}")
         print(f"Epoch {epoch + 1}/{params['num_epochs']}")
         print(f"{'=' * 60}")
-
 
         model.train()
 
@@ -314,46 +295,6 @@ def main():
         print(
             f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
