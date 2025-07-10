@@ -296,7 +296,7 @@ def main():  # noqa: PLR0915
             f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
         )
         model.eval()
-        state = nnx.state((model,optimizer, metrics))
+        state = nnx.state((model, optimizer, metrics))
         for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
             state = eval_step_jax(graphdef, state, batch)
         model, optimizer, metrics = nnx.merge(graphdef, state)

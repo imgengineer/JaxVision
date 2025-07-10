@@ -50,14 +50,11 @@ class ImageFolderDataSource:
         and collects all valid image files within them.
         """
         if not self.root_dir.exists():
-
             msg = f"Root directory {self.root_dir} does not exist."
             raise FileNotFoundError(msg)
 
         class_to_idx = {}
         valid_extensions = get_image_extensions()
-
-
 
         class_dirs = [d for d in self.root_dir.iterdir() if d.is_dir()]
         class_dirs.sort(key=lambda x: x.name)
@@ -68,15 +65,11 @@ class ImageFolderDataSource:
             class_to_idx[class_name] = class_idx
             self.classes.append(class_name)
 
-
             for ext in valid_extensions:
-
                 for img_path in class_dir.glob(f"*{ext}"):
-
                     self.samples.append((str(img_path), class_idx))
 
         if not self.samples:
-
             msg = f"No valid images found in directory '{self.root_dir}'"
             raise RuntimeError(msg)
 
@@ -105,7 +98,6 @@ def create_datasets(params):
 
     """
     train_dataset = ImageFolderDataSource(params["train_data_path"])
-
 
     val_dataset = ImageFolderDataSource(params["val_data_path"])
 
