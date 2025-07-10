@@ -1,10 +1,11 @@
 import os
+from functools import partial
 
 os.environ["PJRT_DEVICE"] = "TPU"
 import csv
 from pathlib import Path
 
-import albumentations as A
+import albumentations as A  # noqa: N812
 import grain.python as grain
 import jax
 import optax
@@ -16,12 +17,12 @@ from tqdm import tqdm
 
 from dataset import create_datasets
 from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap
-from jaxvision.utils import print_dataset_info, set_seed
+from jaxvision.utils import print_dataset_info, save_model, set_seed
 from resnet import resnet50
 
 params = {
     "num_epochs": 300,
-    "batch_size": 720,
+    "batch_size": 1600,
     "target_size": 224,
     "learning_rate": 5e-4,
     "weight_decay": 1e-4,
@@ -103,7 +104,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         len(train_dataset),
         shuffle=True,
         seed=params["seed"],
-        shard_options=grain.NoSharding(),
+        shard_options=grain.ShardByJaxProcess(),
         num_epochs=200,
     )
 
@@ -111,8 +112,8 @@ def create_dataloaders(train_dataset, val_dataset, params):
         len(val_dataset),
         shuffle=False,
         seed=params["seed"],
-        shard_options=grain.NoSharding(),
-        num_epochs=1,
+        shard_options=grain.ShardByJaxProcess(),
+        num_epochs=200,
     )
 
     train_loader = grain.DataLoader(
@@ -158,13 +159,14 @@ def create_dataloaders(train_dataset, val_dataset, params):
     return train_loader, val_loader
 
 
-def create_optimizer(model, learining_rate: float, weight_decay: float) -> nnx.Optimizer:
+def create_optimizer(model, learning_rate: float, weight_decay: float) -> nnx.Optimizer:
+    tx = optax.adamw(
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+    )
     return nnx.Optimizer(
         model,
-        optax.adamw(
-            learning_rate=learining_rate,
-            weight_decay=weight_decay,
-        ),
+        tx,
     )
 
 
@@ -176,8 +178,27 @@ def loss_fn(model, batch):
     return loss, logits
 
 
+@partial(jax.jit, donate_argnames="state")
+def train_step_jax(graphdef, state, batch):
+    model, optimizer, metrics = nnx.merge(graphdef, state)
+    grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
+    (loss, logits), grads = grad_fn(model, batch)
+    optimizer.update(grads)
+    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    state = nnx.state((model, optimizer, metrics))
+    return loss, state
+
+
+@partial(jax.jit, donate_argnames="state")
+def eval_step_jax(graphdef, state, batch):
+    model, optimizer, metrics = nnx.merge(graphdef, state)
+    loss, logits = loss_fn(model, batch)
+    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    return nnx.state((model, optimizer, metrics))
+
+
 @nnx.jit
-def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
+def train_step_nnx(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
     """Performs a single training step, including forward pass, loss calculation,
     gradient computation, and parameter update.
 
@@ -197,7 +218,7 @@ def train_step(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch)
 
 
 @nnx.jit
-def eval_step(model, metrics: nnx.MultiMetric, batch):
+def eval_step_nnx(model, metrics: nnx.MultiMetric, batch):
     """Performs a single evaluation step, including forward pass and loss calculation.
     No gradient computation or parameter updates occur here.
 
@@ -212,7 +233,7 @@ def eval_step(model, metrics: nnx.MultiMetric, batch):
     metrics.update(loss=loss, logits=logits, labels=batch[1])
 
 
-def main():
+def main():  # noqa: PLR0915
     """Main function to orchestrate the training and validation process of the model."""
     set_seed(params["seed"])
 
@@ -228,43 +249,28 @@ def main():
 
     print("\n🏗️ Creating model and optimizer...")
 
-    mesh = Mesh(mesh_utils.create_device_mesh((2, 2)), ("batch", "model"))
+    # Data Parallel
+    mesh = Mesh(mesh_utils.create_device_mesh((4,)), ("data",))
+    data_sharding = NamedSharding(mesh, P("data"))
+    model_sharding = NamedSharding(mesh, P())
+
     model = resnet50(num_classes=params["num_classes"], rngs=nnx.Rngs(params["seed"]))
-
-    for _, m in model.iter_modules():
-        if isinstance(m, nnx.Conv):
-            m.kernel_init = nnx.with_partitioning(
-                nnx.initializers.variance_scaling(2.0, "fan_out", "truncated_normal"),
-                NamedSharding(
-                    mesh,
-                    P(None, "model"),
-                ),
-            )
-            m.bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P("model")))
-        elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
-            m.scale_init = nnx.with_partitioning(nnx.initializers.constant(1), NamedSharding(mesh, P("model")))
-            m.bias_init = nnx.with_partitioning(nnx.initializers.constant(0), NamedSharding(mesh, P("model")))
-        elif isinstance(m, nnx.Linear):
-            m.kernel_init = nnx.with_partitioning(
-                nnx.initializers.xavier_uniform(),
-                NamedSharding(mesh, P(None, "model")),
-            )
-            m.bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P("model")))
-
     optimizer = create_optimizer(
         model,
-        learining_rate=params["learning_rate"],
+        learning_rate=params["learning_rate"],
         weight_decay=params["weight_decay"],
     )
 
-    train_metrics = nnx.MultiMetric(
+    # replicate state
+    state = nnx.state((model, optimizer))
+    state = jax.device_put(state, model_sharding)
+    nnx.update((model, optimizer), state)
+
+    metrics = nnx.MultiMetric(
         accuracy=nnx.metrics.Accuracy(),
         loss=nnx.metrics.Average("loss"),
     )
-    val_metrics = nnx.MultiMetric(
-        accuracy=nnx.metrics.Accuracy(),
-        loss=nnx.metrics.Average("loss"),
-    )
+    best_acc = -1.0
 
     csv_path = params["checkpoint_dir"] / "train_log.csv"
 
@@ -274,27 +280,54 @@ def main():
 
     print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
 
-    cached_train_step = nnx.cached_partial(train_step, model, optimizer, train_metrics)
-    nnx.cached_partial(eval_step, model, val_metrics)
+    graphdef, state = nnx.split((model, optimizer, metrics))
     for epoch in range(params["num_epochs"]):
         print(f"\n{'=' * 60}")
         print(f"Epoch {epoch + 1}/{params['num_epochs']}")
         print(f"{'=' * 60}")
 
         model.train()
-
         for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
-            images, labels = batch
-            sharded_images = jax.device_put(images, NamedSharding(mesh, P("batch", None)))
-            sharded_labels = jax.device_put(labels, NamedSharding(mesh, P("batch")))
-            cached_train_step(
-                (sharded_images, sharded_labels),
-            )
-        train_result = train_metrics.compute()
-        train_metrics.reset()
+            loss, state = train_step_jax(graphdef, state, jax.device_put(batch, data_sharding))
+        model, optimizer, metrics = nnx.merge(graphdef, state)
+        train_result = metrics.compute()
+        metrics.reset()
         print(
             f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
         )
+        model.eval()
+        state = nnx.state((model,optimizer, metrics))
+        for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
+            state = eval_step_jax(graphdef, state, batch)
+        model, optimizer, metrics = nnx.merge(graphdef, state)
+        val_result = metrics.compute()
+        metrics.reset()
+        state = nnx.state((model, optimizer, metrics))
+        print(
+            f"📊 Val Loss: {val_result['loss']:.6f}, Acc: {val_result['accuracy'] * 100:.6f}%",
+        )
+
+        current_acc = float(val_result["accuracy"])
+        if current_acc > best_acc:
+            best_acc = current_acc
+
+            checkpoint_path = params["checkpoint_dir"] / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
+            save_model(model, checkpoint_path)
+            print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
+
+        with csv_path.open(mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    epoch + 1,
+                    train_result["loss"],
+                    train_result["accuracy"],
+                    val_result["loss"],
+                    val_result["accuracy"],
+                ],
+            )
+    print("\n🎯 Training completed!")
+    print(f"🏆 Best validation accuracy: {best_acc * 100:.6f}%")
 
 
 if __name__ == "__main__":
