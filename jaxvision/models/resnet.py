@@ -105,12 +105,6 @@ class BasicBlock(nnx.Module):
 
 
 class Bottleneck(nnx.Module):
-
-
-
-
-
-
     expansion: int = 4
 
     def __init__(
@@ -181,13 +175,9 @@ class ResNet(nnx.Module):
         self.inplanes = 64
         self.dilation = 1
         if replace_stride_with_dilation is None:
-
-
             replace_stride_with_dilation = [False, False, False]
         if len(replace_stride_with_dilation) != 3:
-            msg = (
-                f"replace_stride_with_dilation shoule be None or a 3-element tuple, got {replace_stride_with_dilation}"
-            )
+            msg = f"replace_stride_with_dilation shoule be None or a 3-element tuple, got {replace_stride_with_dilation}"
             raise ValueError(msg)
         self.groups = groups
         self.base_width = width_per_group
@@ -235,8 +225,6 @@ class ResNet(nnx.Module):
             elif isinstance(m, nnx.BatchNorm | nnx.GroupNorm):
                 m.scale_init = nnx.initializers.constant(1)
                 m.bias_init = nnx.initializers.constant(0)
-
-
 
         if zero_init_residual:
             for _, m in self.iter_modules():

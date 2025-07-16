@@ -302,11 +302,8 @@ class PartitionAttentionLayer(nnx.Module):
         self,
         in_channels: int,
         head_dim: int,
-
         partition_size: int,
         partition_type: str,
-
-
         grid_size: tuple[int, int],
         mlp_ratio: int,
         activation_layer: Callable[..., nnx.Module],
@@ -392,22 +389,18 @@ class MaxVitLayer(nnx.Module):
 
     def __init__(
         self,
-
         in_channels: int,
         out_channels: int,
         squeeze_ratio: float,
         expansion_ratio: float,
         stride: int,
-
         norm_layer: Callable[..., nnx.Module],
         activation_layer: Callable[..., nnx.Module],
-
         head_dim: int,
         mlp_ratio: int,
         mlp_dropout: float,
         attention_dropout: float,
         p_stochastic_dropout: float,
-
         partition_size: int,
         grid_size: tuple[int, int],
         *,
@@ -494,23 +487,18 @@ class MaxVitBlock(nnx.Module):
 
     def __init__(
         self,
-
         in_channels: int,
         out_channels: int,
         squeeze_ratio: float,
         expansion_ratio: float,
-
         norm_layer: Callable[..., nnx.Module],
         activation_layer: Callable[..., nnx.Module],
-
         head_dim: int,
         mlp_ratio: int,
         mlp_dropout: float,
         attention_dropout: float,
-
         partition_size: int,
         input_grid_size: tuple[int, int],
-
         n_layers: int,
         p_stochastic: list[float],
         *,
@@ -576,31 +564,20 @@ class MaxVit(nnx.Module):
 
     def __init__(
         self,
-
         input_size: tuple[int, int],
-
         stem_channels: int,
-
         partition_size: int,
-
         block_channels: list[int],
         block_layers: list[int],
-
         head_dim: int,
         stochastic_depth_prob: float,
-
-
-
         norm_layer: Callable[..., nnx.Module] | None = None,
         activation_layer: Callable[..., nnx.Module] = nnx.gelu,
-
         squeeze_ratio: float = 0.25,
         expansion_ratio: float = 4,
-
         mlp_ratio: int = 4,
         mlp_dropout: float = 0.0,
         attention_dropout: float = 0.0,
-
         num_classes: int = 1000,
         *,
         rngs: nnx.Rngs,
@@ -647,13 +624,9 @@ class MaxVit(nnx.Module):
         input_size = _get_conv_output_shape(input_size, kernel_size=3, stride=2, padding=1)
         self.partition_size = partition_size
 
-
         blocks = []
         in_channels = [stem_channels, *block_channels[:-1]]
         out_channels = block_channels
-
-
-
 
         p_stochastic = np.linspace(0, stochastic_depth_prob, sum(block_layers)).tolist()
 
@@ -714,18 +687,12 @@ class MaxVit(nnx.Module):
 
 
 def _maxvit(
-
     stem_channels: int,
-
     block_channels: list[int],
     block_layers: list[int],
     stochastic_depth_prob: float,
-
     partition_size: int,
-
     head_dim: int,
-
-
     *,
     rngs: nnx.Rngs,
     **kwargs: Any,

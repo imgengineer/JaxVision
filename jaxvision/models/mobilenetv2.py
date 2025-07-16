@@ -33,7 +33,6 @@ class InvertedResidual(nnx.Module):
 
         layers: list[nnx.Module] = []
         if expand_ratio != 1:
-
             layers.append(
                 Conv2dNormActivation(
                     inp,
@@ -46,7 +45,6 @@ class InvertedResidual(nnx.Module):
             )
         layers.extend(
             [
-
                 Conv2dNormActivation(
                     hidden_dim,
                     hidden_dim,
@@ -56,7 +54,6 @@ class InvertedResidual(nnx.Module):
                     activation_layer=nnx.relu6,
                     rngs=rngs,
                 ),
-
                 nnx.Conv(
                     hidden_dim,
                     oup,
@@ -116,7 +113,6 @@ class MobileNetV2(nnx.Module):
 
         if inverted_residual_setting is None:
             inverted_residual_setting = [
-
                 [1, 16, 1, 1],
                 [6, 24, 2, 2],
                 [6, 32, 3, 2],
@@ -126,13 +122,9 @@ class MobileNetV2(nnx.Module):
                 [6, 320, 1, 1],
             ]
 
-
-        if (
-            len(inverted_residual_setting) == 0 or len(inverted_residual_setting[0]) != 4
-        ):
+        if len(inverted_residual_setting) == 0 or len(inverted_residual_setting[0]) != 4:
             msg = f"inveted_residual_setting should be non-empty or a 4-element list, got {inverted_residual_setting}"
             raise ValueError(msg)
-
 
         input_channel = _make_divisible(input_channel * width_mult, round_nearest)
         self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
@@ -146,7 +138,6 @@ class MobileNetV2(nnx.Module):
                 rngs=rngs,
             ),
         ]
-
 
         for t, c, n, s in inverted_residual_setting:
             output_channel = _make_divisible(c * width_mult, round_nearest)
@@ -175,15 +166,12 @@ class MobileNetV2(nnx.Module):
             ),
         )
 
-
         self.features = nnx.Sequential(*features)
-
 
         self.classifier = nnx.Sequential(
             nnx.Dropout(rate=dropout, rngs=rngs),
             nnx.Linear(self.last_channel, num_classes, rngs=rngs),
         )
-
 
         for _, m in self.iter_modules():
             if isinstance(m, nnx.Conv):

@@ -1,6 +1,8 @@
 import os
 from functools import partial
 
+from jaxvision.models.resnet import resnet50
+
 os.environ["PJRT_DEVICE"] = "TPU"
 import csv
 from pathlib import Path
@@ -15,29 +17,12 @@ from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
 from tqdm import tqdm
 
-from dataset import create_datasets
+from data import create_datasets
 from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap
 from jaxvision.utils import print_dataset_info, save_model, set_seed
-from resnet import resnet50
+from params import Config
 
-params = {
-    "num_epochs": 300,
-    "batch_size": 1600,
-    "target_size": 224,
-    "learning_rate": 5e-4,
-    "weight_decay": 1e-4,
-    "seed": 42,
-    "num_classes": 6,
-    "train_data_path": Path(
-        "/root/JaxVision/Original Images/Original Images/FOLDS/fold1/Train",
-    ),
-    "val_data_path": Path(
-        "/root/JaxVision/Original Images/Original Images/FOLDS/fold1/Test",
-    ),
-    "checkpoint_dir": Path(
-        "/root/JaxVision/checkpoints",
-    ),
-}
+params = Config()
 
 
 def create_transforms(target_size, *, is_training=True) -> A.Compose:
@@ -74,6 +59,12 @@ def create_transforms(target_size, *, is_training=True) -> A.Compose:
                     ratio=(0.75, 1.33),
                     p=0.5,
                 ),
+                A.GaussianBlur(blur_limit=(3, 7), p=0.5),
+                A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+                A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.5),
+                A.ElasticTransform(alpha=1, sigma=50, p=0.5),
+                A.RandomFog(fog_coef_range=(0.1, 0.3), p=0.5),
+                A.Sharpen(alpha=(0.2, 0.5), lightness=(0.5, 1.0), p=0.3),
             ],
         )
 
@@ -103,7 +94,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
     train_sampler = grain.IndexSampler(
         len(train_dataset),
         shuffle=True,
-        seed=params["seed"],
+        seed=params.seed,
         shard_options=grain.ShardByJaxProcess(),
         num_epochs=200,
     )
@@ -111,7 +102,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
     val_sampler = grain.IndexSampler(
         len(val_dataset),
         shuffle=False,
-        seed=params["seed"],
+        seed=params.seed,
         shard_options=grain.ShardByJaxProcess(),
         num_epochs=200,
     )
@@ -125,12 +116,12 @@ def create_dataloaders(train_dataset, val_dataset, params):
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
                 create_transforms(
-                    target_size=params["target_size"],
+                    target_size=params.target_size,
                     is_training=True,
                 ),
             ),
             grain.Batch(
-                params["batch_size"],
+                params.batch_size,
                 drop_remainder=True,
             ),
         ],
@@ -145,12 +136,12 @@ def create_dataloaders(train_dataset, val_dataset, params):
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
                 create_transforms(
-                    target_size=params["target_size"],
+                    target_size=params.target_size,
                     is_training=False,
                 ),
             ),
             grain.Batch(
-                params["batch_size"],
+                params.batch_size,
                 drop_remainder=False,
             ),
         ],
@@ -235,9 +226,7 @@ def eval_step_nnx(model, metrics: nnx.MultiMetric, batch):
 
 def main():  # noqa: PLR0915
     """Main function to orchestrate the training and validation process of the model."""
-    set_seed(params["seed"])
-
-    print(f"📋 Configuration: {params}")
+    set_seed(params.seed)
 
     print("\n📂 Loading datasets...")
 
@@ -254,11 +243,11 @@ def main():  # noqa: PLR0915
     data_sharding = NamedSharding(mesh, P("data"))
     model_sharding = NamedSharding(mesh, P())
 
-    model = resnet50(num_classes=params["num_classes"], rngs=nnx.Rngs(params["seed"]))
+    model = resnet50(num_classes=params.num_classes, rngs=nnx.Rngs(params.seed))
     optimizer = create_optimizer(
         model,
-        learning_rate=params["learning_rate"],
-        weight_decay=params["weight_decay"],
+        learning_rate=params.learning_rate,
+        weight_decay=params.weight_decay,
     )
 
     # replicate state
@@ -272,18 +261,18 @@ def main():  # noqa: PLR0915
     )
     best_acc = -1.0
 
-    csv_path = params["checkpoint_dir"] / "train_log.csv"
+    csv_path = params.checkpoint_dir / "train_log.csv"
 
     with Path.open(csv_path, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
-    print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
+    print(f"\n🏃 Starting training for {params.num_epochs} epochs...")
 
     graphdef, state = nnx.split((model, optimizer, metrics))
-    for epoch in range(params["num_epochs"]):
+    for epoch in range(params.num_epochs):
         print(f"\n{'=' * 60}")
-        print(f"Epoch {epoch + 1}/{params['num_epochs']}")
+        print(f"Epoch {epoch + 1} / {params.num_epochs}")
         print(f"{'=' * 60}")
 
         model.train()
@@ -311,7 +300,7 @@ def main():  # noqa: PLR0915
         if current_acc > best_acc:
             best_acc = current_acc
 
-            checkpoint_path = params["checkpoint_dir"] / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
+            checkpoint_path = params.checkpoint_dir / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
             save_model(model, checkpoint_path)
             print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
 

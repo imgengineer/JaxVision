@@ -48,7 +48,6 @@ class CNBlock(nnx.Module):
 
 
 class CNBlockConfig:
-
     def __init__(
         self,
         input_channels: int,
@@ -95,7 +94,6 @@ class ConvNeXt(nnx.Module):
 
         layers: list[nnx.Module] = []
 
-
         firstconv_output_channels = block_setting[0].input_channels
         layers.append(
             Conv2dNormActivation(
@@ -114,16 +112,13 @@ class ConvNeXt(nnx.Module):
         total_stage_blocks = sum(cnf.num_layers for cnf in block_setting)
         stage_block_id = 0
         for cnf in block_setting:
-
             stage: list[nnx.Module] = []
             for _ in range(cnf.num_layers):
-
                 sd_prob = stochastic_depth_prob * stage_block_id / (total_stage_blocks - 1.0)
                 stage.append(block(cnf.input_channels, layer_scale, sd_prob, rngs=rngs))
                 stage_block_id += 1
             layers.append(nnx.Sequential(*stage))
             if cnf.out_channels is not None:
-
                 layers.append(
                     nnx.Sequential(
                         norm_layer(cnf.input_channels, rngs=rngs),
@@ -134,9 +129,7 @@ class ConvNeXt(nnx.Module):
         self.features = nnx.Sequential(*layers)
 
         lastblock = block_setting[-1]
-        lastconv_output_channels = (
-            lastblock.out_channels if lastblock.out_channels is not None else lastblock.input_channels
-        )
+        lastconv_output_channels = lastblock.out_channels if lastblock.out_channels is not None else lastblock.input_channels
         self.classifier = nnx.Sequential(
             norm_layer(lastconv_output_channels, rngs=rngs),
             nnx.Linear(lastconv_output_channels, num_classes, rngs=rngs),

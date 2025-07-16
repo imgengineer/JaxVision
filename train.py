@@ -9,7 +9,7 @@ import optax
 from flax import nnx
 from tqdm import tqdm
 
-from dataset import create_datasets
+from data import create_datasets
 
 # from jaxvision.models.resnet import resnet50
 from jaxvision.models.vision_transformer import vit_b_16
@@ -17,26 +17,9 @@ from jaxvision.models.vision_transformer import vit_b_16
 # from jaxvision.models.swin_transformer import swin_v2_t
 from jaxvision.transforms import AlbumentationsTransform, OpenCVLoadImageMap
 from jaxvision.utils import create_model, print_dataset_info, save_model, set_seed
+from params import Config
 
-params = {
-    "num_epochs": 300,
-    "batch_size": 128,
-    "target_size": 224,
-    "learning_rate": 5e-4,
-    "weight_decay": 1e-4,
-    "seed": 42,
-    "num_workers": 64,
-    "num_classes": 6,
-    "train_data_path": Path(
-        "/root/JaxVision/Original Images/Original Images/FOLDS/fold1/Train",
-    ),
-    "val_data_path": Path(
-        "/root/JaxVision/Original Images/Original Images/FOLDS/fold1/Valid",
-    ),
-    "checkpoint_dir": Path(
-        "/root/JaxVision/checkpoints",
-    ),
-}
+params = Config()
 
 
 def create_transforms(target_size, *, is_training=True) -> A.Compose:
@@ -102,7 +85,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
     train_sampler = grain.IndexSampler(
         len(train_dataset),
         shuffle=True,
-        seed=params["seed"],
+        seed=params.seed,
         shard_options=grain.ShardByJaxProcess(),
         num_epochs=200,
     )
@@ -110,7 +93,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
     val_sampler = grain.IndexSampler(
         len(val_dataset),
         shuffle=False,
-        seed=params["seed"],
+        seed=params.seed,
         shard_options=grain.ShardByJaxProcess(),
         num_epochs=1,
     )
@@ -118,18 +101,18 @@ def create_dataloaders(train_dataset, val_dataset, params):
     train_loader = grain.DataLoader(
         data_source=train_dataset,
         sampler=train_sampler,
-        worker_count=params["num_workers"],
+        worker_count=params.num_workers,
         worker_buffer_size=4,
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
                 create_transforms(
-                    target_size=params["target_size"],
+                    target_size=params.target_size,
                     is_training=True,
                 ),
             ),
             grain.Batch(
-                params["batch_size"],
+                params.batch_size,
                 drop_remainder=True,
             ),
         ],
@@ -138,17 +121,17 @@ def create_dataloaders(train_dataset, val_dataset, params):
     val_loader = grain.DataLoader(
         data_source=val_dataset,
         sampler=val_sampler,
-        worker_count=params["num_workers"],
+        worker_count=params.num_workers,
         worker_buffer_size=4,
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
                 create_transforms(
-                    target_size=params["target_size"],
+                    target_size=params.target_size,
                     is_training=False,
                 ),
             ),
-            grain.Batch(params["batch_size"]),
+            grain.Batch(params.batch_size),
         ],
     )
 
@@ -253,9 +236,7 @@ def eval_step_nnx(model, metrics: nnx.MultiMetric, batch):
 
 def main():
     """Main function to orchestrate the training and validation process of the model."""
-    set_seed(params["seed"])
-
-    print(f"📋 Configuration: {params}")
+    set_seed(params.seed)
 
     print("\n📂 Loading datasets...")
 
@@ -267,12 +248,12 @@ def main():
 
     print("\n🏗️ Creating model and optimizer...")
 
-    model = create_model(vit_b_16, params["seed"], params["num_classes"])
+    model = create_model(vit_b_16, params.seed, params.num_classes)
 
     optimizer = create_optimizer(
         model,
-        learning_rate=params["learning_rate"],
-        weight_decay=params["weight_decay"],
+        learning_rate=params.learning_rate,
+        weight_decay=params.weight_decay,
     )
 
     metrics = nnx.MultiMetric(
@@ -282,18 +263,18 @@ def main():
 
     best_acc = -1.0
 
-    csv_path = params["checkpoint_dir"] / "train_log.csv"
+    csv_path = params.checkpoint_dir / "train_log.csv"
 
     with Path.open(csv_path, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
-    print(f"\n🏃 Starting training for {params['num_epochs']} epochs...")
+    print(f"\n🏃 Starting training for {params.num_epochs} epochs...")
 
     graphdef, state = nnx.split((model, optimizer, metrics))
-    for epoch in range(params["num_epochs"]):
+    for epoch in range(params.num_epochs):
         print(f"\n{'=' * 60}")
-        print(f"Epoch {epoch + 1}/{params['num_epochs']}")
+        print(f"Epoch {epoch + 1}/{params.num_epochs}")
         print(f"{'=' * 60}")
 
         model.train()
@@ -323,7 +304,7 @@ def main():
         if current_acc > best_acc:
             best_acc = current_acc
 
-            checkpoint_path = params["checkpoint_dir"] / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
+            checkpoint_path = params.checkpoint_dir / f"best_model_Epoch_{epoch + 1}_Acc_{current_acc:.6f}" / "state"
             save_model(model, checkpoint_path)
             print(f"🎉 New best model saved with accuracy: {current_acc * 100:.6f}%")
 

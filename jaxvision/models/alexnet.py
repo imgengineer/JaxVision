@@ -9,21 +9,16 @@ __all__ = ["AlexNet", "alexnet"]
 class AlexNet(nnx.Module):
     def __init__(self, num_classes: int = 1000, dropout: float = 0.5, *, rngs: nnx.Rngs) -> None:
         self.features = nnx.Sequential(
-
             nnx.Conv(3, 64, kernel_size=(11, 11), padding="SAME", rngs=rngs),
             nnx.relu,
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2)),
-
             nnx.Conv(64, 192, kernel_size=(5, 5), padding="SAME", rngs=rngs),
             nnx.relu,
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2)),
-
             nnx.Conv(192, 384, kernel_size=(3, 3), padding="SAME", rngs=rngs),
             nnx.relu,
-
             nnx.Conv(384, 256, kernel_size=(3, 3), padding="SAME", rngs=rngs),
             nnx.relu,
-
             nnx.Conv(256, 256, kernel_size=(3, 3), padding="SAME", rngs=rngs),
             nnx.relu,
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2)),

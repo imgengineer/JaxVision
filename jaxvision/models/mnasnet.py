@@ -12,7 +12,6 @@ __all__ = [
 ]
 
 
-
 _BN_MOMENTUM = 1 - 0.9997
 
 
@@ -37,11 +36,9 @@ class _InvertedResidual(nnx.Module):
         mid_ch = in_ch * expansion_factor
         self.apply_residual = in_ch == out_ch and stride == 1
         self.layers = nnx.Sequential(
-
             nnx.Conv(in_ch, mid_ch, kernel_size=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(mid_ch, momentum=bn_momentum, rngs=rngs),
             nnx.relu,
-
             nnx.Conv(
                 mid_ch,
                 mid_ch,
@@ -54,7 +51,6 @@ class _InvertedResidual(nnx.Module):
             ),
             nnx.BatchNorm(mid_ch, momentum=bn_momentum, rngs=rngs),
             nnx.relu,
-
             nnx.Conv(mid_ch, out_ch, kernel_size=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(out_ch, momentum=bn_momentum, rngs=rngs),
         )
@@ -83,10 +79,7 @@ def _stack(
 
     first = _InvertedResidual(in_ch, out_ch, kernel_size, stride, exp_factor, bn_momentum=bn_momentum, rngs=rngs)
     remaining = []
-    remaining = [
-        _InvertedResidual(out_ch, out_ch, kernel_size, 1, exp_factor, bn_momentum=bn_momentum, rngs=rngs)
-        for _ in range(1, repeats)
-    ]
+    remaining = [_InvertedResidual(out_ch, out_ch, kernel_size, 1, exp_factor, bn_momentum=bn_momentum, rngs=rngs) for _ in range(1, repeats)]
     return nnx.Sequential(first, *remaining)
 
 
@@ -139,11 +132,9 @@ class MNASNet(nnx.Module):
         self.num_classes = num_classes
         depths = _get_depths(alpha)
         layers = [
-
             nnx.Conv(3, depths[0], kernel_size=(3, 3), padding="SAME", strides=(2, 2), use_bias=False, rngs=rngs),
             nnx.BatchNorm(depths[0], momentum=_BN_MOMENTUM, rngs=rngs),
             nnx.relu,
-
             nnx.Conv(
                 depths[0],
                 depths[0],
@@ -166,14 +157,12 @@ class MNASNet(nnx.Module):
                 rngs=rngs,
             ),
             nnx.BatchNorm(depths[1], momentum=_BN_MOMENTUM, rngs=rngs),
-
             _stack(depths[1], depths[2], 3, 2, 3, 3, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[2], depths[3], 5, 2, 3, 3, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[3], depths[4], 5, 2, 6, 3, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[4], depths[5], 3, 1, 6, 2, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[5], depths[6], 5, 2, 6, 4, _BN_MOMENTUM, rngs=rngs),
             _stack(depths[6], depths[7], 3, 1, 6, 1, _BN_MOMENTUM, rngs=rngs),
-
             nnx.Conv(depths[7], 1280, kernel_size=(1, 1), padding="SAME", strides=(1, 1), use_bias=False, rngs=rngs),
             nnx.BatchNorm(1280, momentum=_BN_MOMENTUM, rngs=rngs),
             nnx.relu,

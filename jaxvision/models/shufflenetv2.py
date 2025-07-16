@@ -18,11 +18,9 @@ def channel_shuffle(x: jax.Array, groups: int) -> jax.Array:
     bacth_size, height, width, num_channels = x.shape
     channels_per_group = num_channels // groups
 
-
     x = x.reshape(bacth_size, height, width, groups, channels_per_group)
 
     x = jnp.transpose(x, (0, 1, 2, 4, 3))
-
 
     return x.reshape(bacth_size, height, width, num_channels)
 

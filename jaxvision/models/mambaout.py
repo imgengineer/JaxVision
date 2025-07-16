@@ -21,8 +21,6 @@ class StemLayer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-
-
         self.conv1 = nnx.Conv(
             in_channels,
             out_channels // 2,
@@ -33,7 +31,6 @@ class StemLayer(nnx.Module):
         )
         self.norm1 = norm_layer(out_channels // 2, rngs=rngs)
         self.act = act_layer
-
 
         self.conv2 = nnx.Conv(
             out_channels // 2,
@@ -75,8 +72,6 @@ class DownsampleLayer(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-
-
         self.conv = nnx.Conv(
             in_channels,
             out_channels,
@@ -116,14 +111,11 @@ class MlpHead(nnx.Module):
         bias: bool = True,
         rngs: nnx.Rngs,
     ):
-
         hidden_features = int(mlp_ratio * dim)
-
 
         self.fc1 = nnx.Linear(dim, hidden_features, use_bias=bias, rngs=rngs)
         self.act = act_layer
         self.norm = norm_layer(hidden_features, rngs=rngs)
-
 
         self.fc2 = nnx.Linear(hidden_features, num_classes, use_bias=bias, rngs=rngs)
         self.head_dropout = nnx.Dropout(rate=head_dropout, rngs=rngs)
@@ -170,21 +162,16 @@ class GatedCNNBlock(nnx.Module):
     ):
         self.norm = norm_layer(dim, rngs=rngs)
 
-
         hidden = int(expansion_ratio * dim)
 
         self.fc1 = nnx.Linear(dim, hidden * 2, rngs=rngs)
         self.act = act_layer
 
-
         conv_channels = int(conv_ratio * dim)
-
 
         size_g = hidden
         size_i = hidden - conv_channels
         size_c = conv_channels
-
-
 
         if size_g < 0 or size_i < 0 or size_c < 0:
             msg = (
@@ -194,13 +181,7 @@ class GatedCNNBlock(nnx.Module):
             )
             raise ValueError(msg)
 
-
-
-
-
         self.split_points = [size_g, size_g + size_i]
-
-
 
         self.conv = nnx.Conv(
             conv_channels,
@@ -212,7 +193,6 @@ class GatedCNNBlock(nnx.Module):
         )
 
         self.fc2 = nnx.Linear(hidden, dim, rngs=rngs)
-
 
         if drop_path > 0.0:
             self.drop_path = DropPath(drop_path, rngs=rngs)
@@ -234,25 +214,16 @@ class GatedCNNBlock(nnx.Module):
 
         fc1_output = self.fc1(x)
 
-
         g, i, c = jnp.split(fc1_output, self.split_points, axis=-1)
-
-
 
         c = self.conv(c)
 
-
-
         x = self.fc2(self.act(g) * jnp.concatenate([i, c], axis=-1))
-
 
         if self.drop_path is not None:
             x = self.drop_path(x)
 
-
         return x + shortcut
-
-
 
 
 DOWNSAMPLE_LAYERS_FOUR_STAGES = [StemLayer] + [DownsampleLayer] * 3
@@ -293,14 +264,12 @@ class MambaOut(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-
         if depths is None:
             depths = [3, 3, 9, 3]
         if dims is None:
             dims = [96, 192, 384, 576]
 
         self.num_classes = num_classes
-
 
         if not isinstance(depths, list | tuple):
             depths = [depths]
@@ -309,22 +278,14 @@ class MambaOut(nnx.Module):
 
         self.num_stages = len(depths)
 
-
         if not isinstance(downsample_layers, list | tuple):
             downsample_layers = [downsample_layers] * self.num_stages
 
-
         down_dims = [in_chans, *dims]
 
-        self.downsample_layers = [
-            downsample_layers[i](in_channels=down_dims[i], out_channels=down_dims[i + 1], rngs=rngs)
-            for i in range(self.num_stages)
-        ]
-
-
+        self.downsample_layers = [downsample_layers[i](in_channels=down_dims[i], out_channels=down_dims[i + 1], rngs=rngs) for i in range(self.num_stages)]
 
         dp_rates = jnp.linspace(0.0, drop_path_rate, sum(depths)).tolist()
-
 
         self.stages = []
         cur_dp_idx = 0
@@ -344,9 +305,7 @@ class MambaOut(nnx.Module):
             self.stages.append(stage_blocks)
             cur_dp_idx += depths[i]
 
-
         self.norm = output_norm(dims[-1], rngs=rngs)
-
 
         self.head = head_fn(dims[-1], num_classes, head_dropout=head_dropout, rngs=rngs)
 
@@ -375,10 +334,8 @@ class MambaOut(nnx.Module):
             for block in self.stages[i]:
                 x = block(x)
 
-
         x = self.norm(x.mean(axis=(1, 2)))
         return self.head(x)
-
 
 
 def mambaout_femto(*, rngs: nnx.Rngs, **kwargs) -> MambaOut:

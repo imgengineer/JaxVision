@@ -18,7 +18,6 @@ __all__ = [
 
 
 class InvertedResidualConfig:
-
     def __init__(
         self,
         input_channels: int,
@@ -46,7 +45,6 @@ class InvertedResidualConfig:
 
 
 class InvertResidual(nnx.Module):
-
     def __init__(
         self,
         cnf: InvertedResidualConfig,
@@ -63,7 +61,6 @@ class InvertResidual(nnx.Module):
 
         layers: list[nnx.Module] = []
         activation_layer = nnx.hard_sigmoid if cnf.use_hs else nnx.relu
-
 
         if cnf.expanded_channels != cnf.input_channels:
             layers.append(
@@ -94,7 +91,6 @@ class InvertResidual(nnx.Module):
         if cnf.use_se:
             squeeze_channels = _make_divisible(cnf.expanded_channels // 4, 8)
             layers.append(se_layer(cnf.expanded_channels, squeeze_channels, rngs=rngs))
-
 
         layers.append(
             Conv2dNormActivation(
@@ -144,10 +140,7 @@ class MobileNetV3(nnx.Module):
         if not inverted_residual_setting:
             msg = "The inverted_residual_setting should not be empty"
             raise ValueError(msg)
-        if not (
-            isinstance(inverted_residual_setting, Sequence)
-            and all(isinstance(s, InvertedResidualConfig) for s in inverted_residual_setting)
-        ):
+        if not (isinstance(inverted_residual_setting, Sequence) and all(isinstance(s, InvertedResidualConfig) for s in inverted_residual_setting)):
             msg = "The inverted_residual_setting should be List[InvertedResidualConfig]"
             raise TypeError(msg)
 
@@ -158,7 +151,6 @@ class MobileNetV3(nnx.Module):
             norm_layer = partial(nnx.BatchNorm, epsilon=0.001, momentum=0.01)
 
         layers: list[nnx.Module] = []
-
 
         firstconv_output_channels = inverted_residual_setting[0].input_channels
         layers.append(
@@ -173,9 +165,7 @@ class MobileNetV3(nnx.Module):
             ),
         )
 
-
         layers.extend([block(cnf, norm_layer, rngs=rngs) for cnf in inverted_residual_setting])
-
 
         lastconv_input_channels = inverted_residual_setting[-1].out_channels
         lastconv_output_channels = 6 * lastconv_input_channels

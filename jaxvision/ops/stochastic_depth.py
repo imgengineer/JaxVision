@@ -33,7 +33,6 @@ class StochasticDepth(Module):
         if (self.rate == 0.0) or deterministic:
             return inputs
 
-
         if self.rate == 1.0:
             return jnp.zeros_like(inputs)
 
@@ -45,9 +44,6 @@ class StochasticDepth(Module):
         )
         keep_prob = 1.0 - self.rate
         rng = rngs[self.rng_collection]()
-
-
-
 
         broadcast_shape = (inputs.shape[0],) + (1,) * (inputs.ndim - 1) if self.mode == "row" else (1,) * inputs.ndim
 

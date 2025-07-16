@@ -134,8 +134,6 @@ def _vgg(cfg: str, *, batch_norm: bool, rngs: nnx.Rngs, **kwargs):
     return VGG(features=features, rngs=rngs, **kwargs)
 
 
-
-
 def vgg11(rngs: nnx.Rngs, **kwargs: Any) -> VGG:
     return _vgg("A", batch_norm=False, rngs=rngs, **kwargs)
 

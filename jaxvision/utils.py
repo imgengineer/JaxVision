@@ -61,12 +61,9 @@ def load_model(path, num_classes):
 
     state = nnx.state(model)
 
-
     checkpointer = ocp.PyTreeCheckpointer()
 
-
     state = checkpointer.restore(path, item=state)
-
 
     nnx.update(model, state)
     return model
@@ -85,8 +82,6 @@ def save_model(model, path_str: str):
 
     """
     model_path = Path(path_str)
-
-
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
 

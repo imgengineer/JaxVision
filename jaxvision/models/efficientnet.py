@@ -45,7 +45,6 @@ class _MBConvConfig:
 
 
 class MBConvConfig(_MBConvConfig):
-
     def __init__(
         self,
         expand_ratio: float,
@@ -79,7 +78,6 @@ class MBConvConfig(_MBConvConfig):
 
 
 class FusedMBConvConfig(_MBConvConfig):
-
     def __init__(
         self,
         expand_ratio: float,
@@ -123,7 +121,6 @@ class MBConv(nnx.Module):
         layers: list[nnx.Module] = []
         activation_layer = nnx.silu
 
-
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
         if expanded_channels != cnf.input_channels:
             layers.append(
@@ -137,7 +134,6 @@ class MBConv(nnx.Module):
                 ),
             )
 
-
         layers.append(
             Conv2dNormActivation(
                 expanded_channels,
@@ -150,7 +146,6 @@ class MBConv(nnx.Module):
             ),
         )
 
-
         squeeze_channels = max(1, cnf.input_channels // 4)
         layers.append(
             se_layer(
@@ -160,7 +155,6 @@ class MBConv(nnx.Module):
                 rngs=rngs,
             ),
         )
-
 
         layers.append(
             Conv2dNormActivation(
@@ -207,7 +201,6 @@ class FusedMBConv(nnx.Module):
 
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
         if expanded_channels != cnf.input_channels:
-
             layers.append(
                 Conv2dNormActivation(
                     cnf.input_channels,
@@ -219,7 +212,6 @@ class FusedMBConv(nnx.Module):
                     rngs=rngs,
                 ),
             )
-
 
             layers.append(
                 Conv2dNormActivation(
@@ -282,17 +274,13 @@ class EfficientNet(nnx.Module):
         if not inverted_residual_setting:
             msg = "The inverted_residual_setting should not be empty"
             raise ValueError(msg)
-        if not (
-            isinstance(inverted_residual_setting, Sequence)
-            and all(isinstance(s, _MBConvConfig) for s in inverted_residual_setting)
-        ):
+        if not (isinstance(inverted_residual_setting, Sequence) and all(isinstance(s, _MBConvConfig) for s in inverted_residual_setting)):
             msg = "The inverted_residual_setting should be List[MBConvConfig]"
             raise TypeError(msg)
         if norm_layer is None:
             norm_layer = nnx.BatchNorm
 
         layers: list[nnx.Module] = []
-
 
         firstconv_output_channels = inverted_residual_setting[0].input_channels
         layers.append(
@@ -307,20 +295,16 @@ class EfficientNet(nnx.Module):
             ),
         )
 
-
         total_stage_blocks = sum(cnf.num_layers for cnf in inverted_residual_setting)
         stage_block_id = 0
         for cnf in inverted_residual_setting:
             stage: list[nnx.Module] = []
             for _ in range(cnf.num_layers):
-
                 block_cnf = copy.copy(cnf)
-
 
                 if stage:
                     block_cnf.input_channels = block_cnf.out_channels
                     block_cnf.stride = 1
-
 
                 sd_prob = stochastic_depth_prob * float(stage_block_id) / total_stage_blocks
 
@@ -328,7 +312,6 @@ class EfficientNet(nnx.Module):
                 stage_block_id += 1
 
             layers.append(nnx.Sequential(*stage))
-
 
         lastconv_input_channels = inverted_residual_setting[-1].out_channels
         lastconv_output_channels = last_channel if last_channel is not None else 4 * lastconv_input_channels

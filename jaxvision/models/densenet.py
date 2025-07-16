@@ -157,7 +157,6 @@ class DenseNet(nnx.Module):
             partial(nnx.max_pool, window_shape=(3, 3), strides=(2, 2), padding="SAME"),
         ]
 
-
         num_features = num_init_features
         for i, num_layers in enumerate(block_config):
             block = _DenseBlock(
@@ -183,7 +182,6 @@ class DenseNet(nnx.Module):
         self.features = nnx.Sequential(*features)
 
         self.classifier = nnx.Linear(num_features, num_classes, rngs=rngs)
-
 
         for _, m in self.iter_modules():
             if isinstance(m, nnx.Conv):

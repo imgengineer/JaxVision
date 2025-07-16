@@ -97,9 +97,9 @@ def create_datasets(params):
         A tuple containing the initialized training dataset and validation dataset objects.
 
     """
-    train_dataset = ImageFolderDataSource(params["train_data_path"])
+    train_dataset = ImageFolderDataSource(params.train_data_path)
 
-    val_dataset = ImageFolderDataSource(params["val_data_path"])
+    val_dataset = ImageFolderDataSource(params.val_data_path)
 
     return train_dataset, val_dataset
 

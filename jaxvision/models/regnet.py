@@ -99,8 +99,6 @@ class BottleneckTransform(nnx.Sequential):
         )
 
         if se_ratio:
-
-
             width_se_out = round(se_ratio * width_in)
             layers.append(
                 SqueezeExcitation(
@@ -141,7 +139,6 @@ class ResBottlenectBlock(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ) -> None:
-
         self.proj = None
         should_proj = (width_in != width_out) or (stride != 1)
         if should_proj:
@@ -262,12 +259,9 @@ class BlockParams:
 
         widths_cont = jnp.arange(depth) * w_a + w_0
         block_capacity = jnp.round(jnp.log(widths_cont / w_0) / math.log(w_m))
-        block_widths = (
-            (jnp.round(jnp.divide(w_0 * jnp.pow(w_m, block_capacity), QUANT)) * QUANT).astype(jnp.int32).tolist()
-        )
+        block_widths = (jnp.round(jnp.divide(w_0 * jnp.pow(w_m, block_capacity), QUANT)) * QUANT).astype(jnp.int32).tolist()
 
         num_stages = len(set(block_widths))
-
 
         split_helper = zip(
             [*block_widths, 0],
@@ -284,7 +278,6 @@ class BlockParams:
         strides = [STRIDE] * num_stages
         bottleneck_multipliers = [bottleneck_multiplier] * num_stages
         group_widths = [group_width] * num_stages
-
 
         stage_widths, group_widths = cls._adjust_widths_groups_compatibility(
             stage_widths,
@@ -323,7 +316,6 @@ class BlockParams:
         widths = [int(w * b) for w, b in zip(stage_widths, bottleneck_ratios, strict=False)]
         group_widths_min = [min(g, w_bot) for g, w_bot in zip(group_widths, widths, strict=False)]
 
-
         ws_bot = [_make_divisible(w_bot, g) for w_bot, g in zip(widths, group_widths_min, strict=False)]
         stage_widths = [int(w_bot / b) for w_bot, b in zip(ws_bot, bottleneck_ratios, strict=False)]
         return stage_widths, group_widths_min
@@ -350,7 +342,6 @@ class RegNet(nnx.Module):
             block_type = ResBottlenectBlock
         if activation is None:
             activation = nnx.relu
-
 
         self.stem = stem_type(
             3,
@@ -390,7 +381,6 @@ class RegNet(nnx.Module):
         self.trunk_output = nnx.Sequential(*blocks)
 
         self.fc = nnx.Linear(current_width, num_classes, rngs=rngs)
-
 
         for _, m in self.iter_modules():
             if isinstance(m, nnx.Conv):
