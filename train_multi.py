@@ -111,7 +111,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         data_source=train_dataset,
         sampler=train_sampler,
         worker_count=64,
-        worker_buffer_size=4,
+        worker_buffer_size=2,
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
@@ -131,7 +131,7 @@ def create_dataloaders(train_dataset, val_dataset, params):
         data_source=val_dataset,
         sampler=val_sampler,
         worker_count=64,
-        worker_buffer_size=4,
+        worker_buffer_size=2,
         operations=[
             OpenCVLoadImageMap(),
             AlbumentationsTransform(
@@ -162,66 +162,27 @@ def create_optimizer(model, learning_rate: float, weight_decay: float) -> nnx.Op
 
 
 def loss_fn(model, batch):
-    images, labels = batch
-    logits = model(images)
-
-    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
+    logits = model(batch[0])
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch[1]).mean()
     return loss, logits
 
 
 @partial(jax.jit, donate_argnames="state")
 def train_step_jax(graphdef, state, batch):
-    model, optimizer, metrics = nnx.merge(graphdef, state)
-    grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(model, batch)
+    model, optimizer = nnx.merge(graphdef, state)
+    (loss, logits), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch)
     optimizer.update(grads)
-    metrics.update(loss=loss, logits=logits, labels=batch[1])
-    state = nnx.state((model, optimizer, metrics))
-    return loss, state
+    state = nnx.state((model, optimizer))
+    return loss, logits, state
 
 
-@partial(jax.jit, donate_argnames="state")
+# @partial(jax.jit, donate_argnames="state")
+@jax.jit
 def eval_step_jax(graphdef, state, batch):
-    model, optimizer, metrics = nnx.merge(graphdef, state)
+    model, optimizer = nnx.merge(graphdef, state)
     loss, logits = loss_fn(model, batch)
-    metrics.update(loss=loss, logits=logits, labels=batch[1])
-    return nnx.state((model, optimizer, metrics))
-
-
-@nnx.jit
-def train_step_nnx(model, optimizer: nnx.Optimizer, metrics: nnx.MultiMetric, batch):
-    """Performs a single training step, including forward pass, loss calculation,
-    gradient computation, and parameter update.
-
-    Args:
-        model: The neural network model.
-        optimizer: The Optax optimizer.
-        metrics: The metrics tracker for training.
-        batch: A tuple containing (images, labels) for the current training batch.
-
-    """
-    grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(model, batch)
-
-    metrics.update(loss=loss, logits=logits, labels=batch[1])
-
-    optimizer.update(grads)
-
-
-@nnx.jit
-def eval_step_nnx(model, metrics: nnx.MultiMetric, batch):
-    """Performs a single evaluation step, including forward pass and loss calculation.
-    No gradient computation or parameter updates occur here.
-
-    Args:
-        model: The neural network model.
-        metrics: The metrics tracker for evaluation.
-        batch: A tuple containing (images, labels) for the current evaluation batch.
-
-    """
-    loss, logits = loss_fn(model, batch)
-
-    metrics.update(loss=loss, logits=logits, labels=batch[1])
+    # state = nnx.state((model, optimizer))
+    return loss, logits
 
 
 def main():  # noqa: PLR0915
@@ -269,29 +230,42 @@ def main():  # noqa: PLR0915
 
     print(f"\n🏃 Starting training for {params.num_epochs} epochs...")
 
-    graphdef, state = nnx.split((model, optimizer, metrics))
+    graphdef, state = nnx.split((model, optimizer))
     for epoch in range(params.num_epochs):
         print(f"\n{'=' * 60}")
         print(f"Epoch {epoch + 1} / {params.num_epochs}")
         print(f"{'=' * 60}")
-
         model.train()
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} Training"):
-            loss, state = train_step_jax(graphdef, state, jax.device_put(batch, data_sharding))
-        model, optimizer, metrics = nnx.merge(graphdef, state)
+        state = nnx.state((model, optimizer))
+        for step, batch in tqdm(enumerate(train_loader), desc=f"Epoch {epoch + 1} Training"):
+            loss, logits, state = train_step_jax(graphdef, state, jax.device_put(batch, data_sharding))
+            metrics.update(
+                loss=loss,
+                logits=logits,
+                labels=batch[1],
+            )
+            print(
+                f"\r[train] epoch: {epoch + 1}/{params.num_epochs}, loss: {loss.item():.4f} ",
+                end="",
+            )
+            print("\r", end="")
         train_result = metrics.compute()
         metrics.reset()
         print(
-            f"✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
+            f"\n✅ Train Loss: {train_result['loss']:.6f}, Acc: {train_result['accuracy'] * 100:.6f}%",
         )
+        model, optimizer = nnx.merge(graphdef, state)
         model.eval()
-        state = nnx.state((model, optimizer, metrics))
+        state = nnx.state((model, optimizer))
         for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} Validation"):
-            state = eval_step_jax(graphdef, state, batch)
-        model, optimizer, metrics = nnx.merge(graphdef, state)
+            loss, logits = eval_step_jax(graphdef, state, batch)
+            metrics.update(
+                loss=loss,
+                logits=logits,
+                labels=batch[1],
+            )
         val_result = metrics.compute()
         metrics.reset()
-        state = nnx.state((model, optimizer, metrics))
         print(
             f"📊 Val Loss: {val_result['loss']:.6f}, Acc: {val_result['accuracy'] * 100:.6f}%",
         )

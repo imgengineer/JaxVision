@@ -110,29 +110,34 @@ class Conv2dNormActivation(nnx.Sequential):
         out_channels,
         kernel_size: int = 3,
         stride: int = 1,
-        padding: int | tuple[int, int] | str | None = None,
+        padding: int | None = None,
         groups: int = 1,
-        norm_layer: Callable[..., nnx.Module] | None = nnx.BatchNorm,
+        norm_layer: Callable[..., nnx.Module] = nnx.BatchNorm,
         activation_layer: Callable[..., nnx.Module] | None = nnx.relu,
         dilation: int | tuple[int, ...] = 1,
-        conv_layer: Callable[..., nnx.Module] = nnx.Conv,
         *,
         bias: bool | None = None,
         rngs: nnx.Rngs,
     ) -> nnx.Sequential:
+        self.out_channels = out_channels
+
         if padding is None:
-            padding = "SAME"
+            padding = (kernel_size - 1) // 2 * dilation
         if bias is None:
             bias = norm_layer is None
 
+        # sequence integer pairs that give the padding to apply before
+        # and after each spatial dimension
+        padding = ((padding, padding), (padding, padding))
+
         layers = [
-            conv_layer(
+            nnx.Conv(
                 in_channels,
                 out_channels,
                 kernel_size=(kernel_size, kernel_size),
                 strides=(stride, stride),
                 padding=padding,
-                kernel_dilation=dilation,
+                kernel_dilation=(dilation, dilation),
                 feature_group_count=groups,
                 use_bias=bias,
                 rngs=rngs,
@@ -147,3 +152,14 @@ class Conv2dNormActivation(nnx.Sequential):
 
         self.out_channels = out_channels
         super().__init__(*layers)
+
+
+class InstanceNorm(nnx.GroupNorm):
+    def __init__(self, num_features, **kwargs):
+        num_groups, group_size = num_features, None
+        super().__init__(
+            num_features,
+            num_grous=num_groups,
+            group_size=group_size,
+            **kwargs,
+        )
